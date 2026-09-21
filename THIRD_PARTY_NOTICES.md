@@ -21,6 +21,10 @@ directly; this release does not depend on or redistribute React Leaflet.
 
 ## Optional scanning tools
 
+The server uses [Nodemailer](https://github.com/nodemailer/nodemailer), MIT-0,
+for SMTP email. Its package is included in the server build with upstream notices.
+
+
 Linux scanning uses separately installed OpenCV (Apache-2.0 for current 4.x),
 Tesseract (Apache-2.0), Pillow (HPND) and NumPy (BSD-3-Clause). Their distributions
 may include further notices for bundled components. See their installed license

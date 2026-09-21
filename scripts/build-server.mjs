@@ -7,5 +7,12 @@ const result = ts.transpileModule(source,{compilerOptions:{target:ts.ScriptTarge
 await fs.mkdir('.local-data/deploy/server',{recursive:true})
 await fs.mkdir('.local-data/deploy/scripts',{recursive:true})
 await fs.writeFile('.local-data/deploy/server/recognition.mjs',result.outputText)
-await fs.copyFile('server/production.mjs','.local-data/deploy/server/production.mjs')
-await fs.copyFile('scripts/scan-ticket-linux.py','.local-data/deploy/scripts/scan-ticket-linux.py')
+for (const name of ['production.mjs','accounts.mjs','auth-page.mjs','auth.js','auth.css','collection.mjs','private-store.mjs','mail.mjs','feedback.mjs']) {
+  await fs.copyFile('server/'+name,'.local-data/deploy/server/'+name)
+}
+for (const name of ['scan-ticket-linux.py','init-wallet.mjs','upgrade-accounts.mjs']) {
+  await fs.copyFile('scripts/'+name,'.local-data/deploy/scripts/'+name)
+}
+// Nodemailer is pure JS; keep its package and notices with the runtime bundle.
+await fs.mkdir('.local-data/deploy/node_modules',{recursive:true})
+await fs.cp('node_modules/nodemailer','.local-data/deploy/node_modules/nodemailer',{recursive:true})

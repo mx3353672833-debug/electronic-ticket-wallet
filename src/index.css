@@ -174,6 +174,11 @@ form textarea { resize:vertical; line-height:1.8; }
 .batch-progress p { margin:0; font-size:11px; }
 .batch-errors { max-height:170px; overflow-y:auto; color:#af3528; font-size:11px; }
 @keyframes dialog-enter { from { opacity:0; } to { opacity:1; } }
+.account-modal { width:min(460px,calc(100vw - 24px)); }
+.account-email { margin:0; font-size:15px; overflow-wrap:anywhere; }.account-email>span { display:block; color:var(--muted); font-size:11px; margin-top:7px; }
+.account-storage { display:grid; gap:10px; font-size:12px; }.account-storage progress { width:100%; height:6px; accent-color:var(--accent); }.account-storage small { color:var(--muted); font-size:10px; }
+.account-invite { border-top:1px solid var(--line); padding-top:19px; }.account-invite h3 { font-size:13px; font-weight:600; margin:0 0 10px; }.account-invite p { font-size:12px; line-height:1.7; color:var(--muted); }.account-invite label { display:grid; gap:8px; font-size:11px; color:var(--muted); }.account-invite input { padding:10px; font:14px var(--mono); border:1px solid var(--line); border-radius:5px; width:100%; background:#fff; }
+.account-link { display:flex; align-items:center; justify-content:space-between; text-align:left; padding:15px 0; border-block:1px solid var(--line); font-size:13px; }.account-signout { padding:12px 0; color:var(--muted); font-size:12px; }.feedback-form { display:grid; gap:17px; }.feedback-inbox { width:min(600px,calc(100vw - 24px)); }.feedback-list { display:grid; gap:20px; }.feedback-item { border-bottom:1px solid var(--line); padding-bottom:18px; }.feedback-meta { display:flex; align-items:center; justify-content:space-between; gap:12px; font-size:10px; color:var(--muted); }.feedback-meta strong { color:var(--ink); font-size:12px; }.feedback-item>a { display:block; font-size:11px; color:var(--accent); margin-top:10px; overflow-wrap:anywhere; }.feedback-item>p { white-space:pre-wrap; overflow-wrap:anywhere; font-size:13px; line-height:1.8; }
 @keyframes drawer-enter { from { opacity:0; transform:translateX(12px); } to { opacity:1; transform:none; } }
 @media(max-width:850px) {
  .app-header { gap:16px; padding:0 18px; }.collection-title>span { display:none; }.header-tools { gap:16px; }.toolbar-button>span { display:none; }
