@@ -14,6 +14,7 @@
 - Leaflet 地图与照片聚合；「只看轨迹」可隐藏地图票面，并记住选择。导入 GPX / GeoJSON，保留轨迹分段，不跨缺口连线。
 - 本机 IndexedDB 收藏；或部署带邮箱验证码、一次性邀请链接和独立收藏的多用户服务器版。
 - 站内「提建议」入口；站长收件箱、邮件通知、处理状态，以及邮件失败后的重试。
+- 主页「更新记录」按版本列出简短公告，点开查看，不自动弹窗。
 
 ## 本机运行
 
@@ -85,6 +86,8 @@ npm run build:server
 - `docs/self-hosting.md`：通用部署模板，不含实际账号或服务器信息。
 
 贡献前请读 [CONTRIBUTING.md](CONTRIBUTING.md)。隐私与部署风险见 [SECURITY.md](SECURITY.md)。
+
+每次发布需同步追加网页公告并升版本，见 [发布检查清单](docs/releasing.md)。`npm run build` 会校验公告与版本一致；发布前还需 `npm run check:release -- --since <上次线上提交>`，避免漏升版本或删掉旧公告。
 
 ## 隐私与许可
 

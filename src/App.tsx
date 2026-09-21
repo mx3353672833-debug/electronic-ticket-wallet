@@ -10,6 +10,7 @@ import { filterTickets, formatRoute } from './utils/search'
 import { exportWallet } from './utils/exportWallet'
 import { REMOTE } from './utils/remote'
 import { AccountTools } from './components/AccountTools'
+import { ReleaseNotes } from './components/ReleaseNotes'
 import { readTrayCollapsed, saveTrayCollapsed } from './utils/trayPreference'
 import { readMapPhotos, saveMapPhotos } from './utils/mapPreference'
 
@@ -32,7 +33,7 @@ export default function App() {
     <header className="app-header">
       <div className="collection-title"><h1>地点</h1><span>{tickets.length} 张票</span></div>
       <div className="floating-search"><SearchBar /></div>
-      <nav className="header-tools" aria-label="票夹工具">{REMOTE && <AccountTools />}<button className="toolbar-button" aria-label="扫描与识别票面" onClick={() => setProcessing(true)} disabled={!tickets.length}><Icon name="image" size={18} /><span>{REMOTE ? '检查整理' : scanned ? '重新整理' : '整理票面'}</span></button><button className="add-button" aria-label="上传票据照片" onClick={() => setUploadOpen(true)}><Icon name="plus" size={22} /><span>添加</span></button></nav>
+      <nav className="header-tools" aria-label="票夹工具"><ReleaseNotes />{REMOTE && <AccountTools />}<button className="toolbar-button" aria-label="扫描与识别票面" onClick={() => setProcessing(true)} disabled={!tickets.length}><Icon name="image" size={18} /><span>{REMOTE ? '检查整理' : scanned ? '重新整理' : '整理票面'}</span></button><button className="add-button" aria-label="上传票据照片" onClick={() => setUploadOpen(true)}><Icon name="plus" size={22} /><span>添加</span></button></nav>
     </header>
     {loadError && <p className="app-error" role="alert">{loadError}<button onClick={() => void init()}>重试</button></p>}
     {import.meta.env.DEV && <button style={{position:'fixed',left:24,top:88,zIndex:500}} disabled={!!backupStatus && !backupStatus.startsWith('已') && !backupStatus.startsWith('失败')} onClick={() => void exportWallet(setBackupStatus).catch(e => setBackupStatus('失败：' + e.message))}>{backupStatus || '导出私密迁移备份'}</button>}

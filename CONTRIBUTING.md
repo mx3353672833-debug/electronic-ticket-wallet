@@ -12,3 +12,5 @@
 - 不提交 `.local-data/`、`.env` 或个人操作记录；新增第三方依赖需检查许可证。
 
 提交前运行 `npm test`、`npm run test:server`、`npm run lint`、`npm run build`。改服务器还需 `npm run build:server`；改交互还需桌面与手机浏览器验收。请在 PR 中写明改动、验证结果与未验证项。
+
+每次发布网站，必须同步更新网页公告：在 `src/data/releases.json` 顶部追加简短版本说明、升级 package / lockfile 版本，保留旧记录，并运行 `npm run check:release -- --since <上次线上提交>`。具体流程见 [发布检查清单](docs/releasing.md)。不能把未完成的工作写成已上线。

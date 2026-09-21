@@ -15,6 +15,7 @@ const paths = {
   shuffle: <path d="m3 5 4 0 10 14h4M3 19h4L17 5h4m-4-3 4 3-4 3m0 8 4 3-4 3"/>,
   ticket: <><path d="M3 4h18v5a3 3 0 0 0 0 6v5H3v-5a3 3 0 0 0 0-6Z"/><path d="M15 4v3m0 3v4m0 3v3"/></>,
   note: <><path d="M5 3h14v18H5Z M9 8h6M9 12h6M9 16h3"/></>,
+  history: <><path d="M3 10a9 9 0 1 1 2 8M3 4v6h6"/><path d="M12 7v5l3 2"/></>,
   feedback: <><path d="M4 4h16v12H9l-5 4Z"/><path d="M8 8h8M8 12h5"/></>,
   account: <><circle cx="12" cy="8" r="4"/><path d="M4 21v-2a8 8 0 0 1 16 0v2"/></>,
   upload: <path d="M4 16v5h16v-5M12 16V3m-5 5 5-5 5 5"/>,
