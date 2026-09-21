@@ -3,7 +3,7 @@ import { db, getImageBlob, imageIdFromUrl } from '../db/db'
 /** Explicit UI action: export current user edits and referenced bytes to private local storage. */
 export async function exportWallet(onProgress: (text: string) => void) {
   const tickets = (await db.tickets.toArray()).filter(t => !t.id.startsWith('mock-'))
-  const images = [...new Set(tickets.flatMap(t => [t.originalImageUrl, t.processedImageUrl, t.thumbnailUrl]).map(imageIdFromUrl))]
+  const images = [...new Set(tickets.flatMap(t => [t.originalImageUrl, t.processedImageUrl, t.thumbnailUrl, ...(t.appearance ? [t.appearance.sourceImageUrl, t.appearance.sourceThumbnailUrl] : [])]).map(imageIdFromUrl))]
   if (images.some(id => !id)) throw new Error('有未持久化的图片，导出已停止')
   const headers = { 'X-Ticket-Wallet': '1' }
   const start = await fetch('/__local/export/start', { method: 'POST', headers })

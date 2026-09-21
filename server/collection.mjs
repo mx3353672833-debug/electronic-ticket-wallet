@@ -1,8 +1,9 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import {atomicJson,failure,serialQueue} from './private-store.mjs'
+import {appearanceCurrent} from './appearance.mjs'
 
-export async function openCollection({dataDir,scanner,routePlanner}) {
+export async function openCollection({dataDir,scanner,routePlanner,appearanceRenderer}) {
   let manifest=JSON.parse(await fs.readFile(path.join(dataDir,'manifest.json'),'utf8'))
   const serial=serialQueue()
   const commit=async next=>{
@@ -20,6 +21,26 @@ export async function openCollection({dataDir,scanner,routePlanner}) {
     return sizes.reduce((a,b)=>a+b,0)
   }
   const usageBytes=async()=>{const sizes=await Promise.all(['images','scans','revisions','manifest.json'].map(name=>size(path.join(dataDir,name))));return sizes.reduce((a,b)=>a+b,0)}
+  const ensureRoom=async(bytes,quotaBytes)=>{
+    if(quotaBytes && await usageBytes()+bytes>quotaBytes)throw failure(413,'票夹空间已满，请联系站长调整额度')
+    const disk=await fs.statfs(dataDir)
+    if(disk.bavail*disk.bsize<1024*1048576+bytes)throw failure(507,'服务器空间不足，原有票据未改变，请联系站长')
+  }
+  const applyAppearance=async(ticket,quotaBytes)=>{
+    if(!appearanceRenderer || appearanceCurrent(ticket))return {ticket,images:[],unchanged:true,rollback:async()=>{}}
+    const result=await appearanceRenderer(ticket)
+    await ensureRoom(result.images.reduce((sum,image)=>sum+image.size,0)+Buffer.byteLength(JSON.stringify(result.patch)),quotaBytes)
+    const created=[]
+    const rollback=async()=>{for(const file of created)await fs.unlink(file).catch(()=>{})}
+    try{
+      for(const image of result.images){
+        const file=path.join(dataDir,'images',image.id)
+        try{await fs.writeFile(file,image.bytes,{flag:'wx',mode:0o600});created.push(file)}
+        catch(error){if(error.code!=='EEXIST')throw error}
+      }
+      return {ticket:{...ticket,...result.patch},images:result.images.map(({bytes:_bytes,...image})=>image),unchanged:false,rollback}
+    }catch(error){await rollback();throw error}
+  }
   const processTicket=async(ticket,original)=>{
     const result=await scanner(original,ticket.sourceFile.sha256)
     const now=new Date().toISOString(),sha=ticket.sourceFile.sha256
@@ -44,13 +65,13 @@ export async function openCollection({dataDir,scanner,routePlanner}) {
       // Timetable/network outages must not make an otherwise valid photo import fail.
       try{const route=await routePlanner(next);if(route)next.railRoute=route}catch{}
     }
-    return {ticket:next,images:additions,originalMime:({JPEG:'image/jpeg',PNG:'image/png',WEBP:'image/webp',GIF:'image/gif',AVIF:'image/avif'})[result.originalFormat]||'application/octet-stream'}
+    try{
+      const appearance=await applyAppearance(next)
+      return {ticket:appearance.ticket,images:[...additions,...appearance.images],originalMime:({JPEG:'image/jpeg',PNG:'image/png',WEBP:'image/webp',GIF:'image/gif',AVIF:'image/avif'})[result.originalFormat]||'application/octet-stream'}
+    }catch(error){
+      for(const image of additions)if(!manifest.images.some(i=>i.id===image.id))await fs.unlink(path.join(dataDir,'images',image.id)).catch(()=>{})
+      throw error
+    }
   }
-  return {get manifest(){return manifest},dataDir,serial,commit,processTicket,usageBytes,
-    async ensureRoom(bytes,quotaBytes) {
-      if(quotaBytes && await usageBytes()+bytes>quotaBytes) throw failure(413,'票夹空间已满，请联系站长调整额度')
-      const disk=await fs.statfs(dataDir)
-      if(disk.bavail*disk.bsize<1024*1048576+bytes) throw failure(507,'服务器空间不足，原有票据未改变，请联系站长')
-    },
-  }
+  return {get manifest(){return manifest},dataDir,serial,commit,processTicket,usageBytes,ensureRoom,applyAppearance}
 }

@@ -38,6 +38,17 @@ export type Ticket = {
   originalImageUrl: string
   processedImageUrl: string
   thumbnailUrl: string
+  appearance?: {
+    version: string
+    sourceImageUrl: string
+    sourceThumbnailUrl: string
+    imageUrl: string
+    sourceSha256: string
+    method: string
+    width: number
+    height: number
+    originalUntouched: boolean
+  }
   cropRecipe?: CropRecipe
   track?: JourneyTrack
   railRoute?: {

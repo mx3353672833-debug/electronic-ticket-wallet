@@ -13,6 +13,7 @@ import {createFeedback} from './feedback.mjs'
 import {openCollection} from './collection.mjs'
 import {createRoutePlanner,routeInput,routeSignature} from './train-routes.mjs'
 import {failure,secureEqual} from './private-store.mjs'
+import {createAppearanceRenderer} from './appearance.mjs'
 
 export {passwordHash}
 const run=promisify(execFile),prefix='/tickets',imagePrefix='idb://images/'
@@ -27,7 +28,7 @@ async function jsonBody(req,limit=16384) {
   try { const value=JSON.parse((await body(req,limit)).toString());if(!value || Array.isArray(value) || typeof value!=='object')throw failure(400,'请求格式错误');return value }
   catch(error){if(error instanceof SyntaxError)throw failure(400,'请求格式错误');throw error}
 }
-export async function createWalletServer({dataDir,distDir,config,scanner,scannerFactory,serviceConfig,sendMail,routePlanner,now=()=>Date.now()}) {
+export async function createWalletServer({dataDir,distDir,config,scanner,scannerFactory,appearanceFactory,serviceConfig,sendMail,routePlanner,now=()=>Date.now()}) {
   const multi=Boolean(serviceConfig)
   const mail=sendMail || (multi?createMailer(serviceConfig):null)
   const accounts=multi?await createAccounts({dataDir,config:serviceConfig,sendMail:mail,now}):null
@@ -41,7 +42,9 @@ export async function createWalletServer({dataDir,distDir,config,scanner,scanner
     if(!collections.has(user.id)) {
       if(!idPattern.test(user.id) || (user.storage==='legacy' && user.role!=='owner'))throw new Error('Invalid collection owner')
       const directory=user.storage==='legacy'?dataDir:path.join(dataDir,'users',user.id)
-      const loading=(async()=>openCollection({dataDir:directory,routePlanner:planRoute,scanner:scannerFactory?await scannerFactory(directory,user):scanner || await createScanner(directory,{cacheDir:dataDir,includeRoutes:user.storage==='legacy'})}))()
+      const loading=(async()=>openCollection({dataDir:directory,routePlanner:planRoute,
+        appearanceRenderer:appearanceFactory?await appearanceFactory(directory,user):scanner||scannerFactory?undefined:createAppearanceRenderer(directory),
+        scanner:scannerFactory?await scannerFactory(directory,user):scanner || await createScanner(directory,{cacheDir:dataDir,includeRoutes:user.storage==='legacy'})}))()
       collections.set(user.id,loading)
       loading.catch(()=>collections.delete(user.id))
     }
@@ -147,6 +150,25 @@ export async function createWalletServer({dataDir,distDir,config,scanner,scanner
       const manifest=collection.manifest
       if(route===prefix+'/api/account' && req.method==='GET')return json(res,200,{...(accounts?accounts.publicUser(user):{role:'owner',email:''}),usedBytes:await collection.usageBytes(),quotaBytes:user.quotaBytes,registration:multi?'invite':'disabled',canInvite:multi && user.role==='owner',feedbackEnabled:multi})
       if(route===prefix+'/api/tickets' && req.method==='GET')return json(res,200,manifest.tickets)
+      const appearanceMatch=route.match(/^\/tickets\/api\/appearance\/([a-zA-Z0-9-]{1,160})$/)
+      if(appearanceMatch && req.method==='POST'){
+        if(scanJobs>=2 || busyUsers.has(user.id))throw failure(429,'正在整理票面，请稍后重试')
+        scanJobs++;busyUsers.add(user.id)
+        try{
+          const result=await serial(async()=>{
+            const current=collection.manifest,ticket=current.tickets.find(t=>t.id===appearanceMatch[1])
+            if(!ticket)throw failure(404,'票据不存在')
+            const prepared=await collection.applyAppearance(ticket,user.quotaBytes)
+            if(prepared.unchanged)return {unchanged:true}
+            try{
+              await commit({...current,tickets:current.tickets.map(t=>t.id===ticket.id?prepared.ticket:t),
+                images:[...current.images,...prepared.images.filter(image=>!current.images.some(i=>i.id===image.id))]})
+            }catch(error){await prepared.rollback();throw error}
+            return {unchanged:false}
+          })
+          return json(res,200,result)
+        }finally{scanJobs--;busyUsers.delete(user.id)}
+      }
       const routeMatch=route.match(/^\/tickets\/api\/routes\/([a-zA-Z0-9-]{1,160})$/)
       if(routeMatch && req.method==='POST') {
         const ticket=manifest.tickets.find(t=>t.id===routeMatch[1])
@@ -213,11 +235,11 @@ export async function createWalletServer({dataDir,distDir,config,scanner,scanner
             try {
               processed=await processTicket(ticket,original)
               await collection.ensureRoom(0,user.quotaBytes)
-              await commit({...manifest,tickets:[...manifest.tickets,processed.ticket],images:[...manifest.images,{id:imageId,mime:processed.originalMime,size:data.length},...processed.images]})
+              await commit({...manifest,tickets:[...manifest.tickets,processed.ticket],images:[...manifest.images,{id:imageId,mime:processed.originalMime,size:data.length},...processed.images.filter(image=>!manifest.images.some(i=>i.id===image.id))]})
             } catch(error) {
               // These paths belong only to this uncommitted upload in this user's collection.
               await fs.unlink(original).catch(()=>{})
-              for(const image of processed?.images||[])await fs.unlink(path.join(collection.dataDir,'images',image.id)).catch(()=>{})
+              for(const image of processed?.images||[])if(!manifest.images.some(i=>i.id===image.id))await fs.unlink(path.join(collection.dataDir,'images',image.id)).catch(()=>{})
               await fs.rm(path.join(collection.dataDir,'scans',sha),{recursive:true,force:true}).catch(()=>{})
               throw error
             }
@@ -234,7 +256,14 @@ export async function createWalletServer({dataDir,distDir,config,scanner,scanner
           const result=await serial(async()=>{
             const manifest=collection.manifest,ticket=manifest.tickets.find(t=>t.id===processMatch[1])
             if(!ticket)throw failure(404,'票据不存在')
-            if(ticket.processing)return {unchanged:true}
+            if(ticket.processing){
+              const prepared=await collection.applyAppearance(ticket,user.quotaBytes)
+              if(!prepared.unchanged){
+                try{await commit({...manifest,tickets:manifest.tickets.map(t=>t.id===ticket.id?prepared.ticket:t),images:[...manifest.images,...prepared.images.filter(image=>!manifest.images.some(i=>i.id===image.id))]})}
+                catch(error){await prepared.rollback();throw error}
+              }
+              return {unchanged:prepared.unchanged}
+            }
             const originalId=ticket.originalImageUrl.slice(imagePrefix.length)
             if(!idPattern.test(originalId))throw failure(400,'无效图片引用')
             await collection.ensureRoom(0,user.quotaBytes)

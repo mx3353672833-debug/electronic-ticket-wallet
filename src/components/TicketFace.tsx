@@ -2,7 +2,7 @@ import type { Ticket } from '../types/ticket'
 import { Icon } from './Icon'
 import { TICKET_TYPE_LABELS } from '../types/ticket'
 
-/** Only demo records use a drawn face. User photographs are always displayed as-is. */
+/** Real tickets use their saved derivative; the original is an explicit view. */
 export function TicketFace({ ticket, original = false, thumbnail = false }: { ticket: Ticket; original?: boolean; thumbnail?: boolean }) {
   if (!ticket.id.startsWith('mock-')) {
     return <img className="real-ticket" src={original ? ticket.originalImageUrl : thumbnail ? ticket.thumbnailUrl : ticket.processedImageUrl} alt={`${ticket.departure?.name || '出发地'} → ${ticket.arrival?.name || '到达地'} 票面`} draggable={false} />

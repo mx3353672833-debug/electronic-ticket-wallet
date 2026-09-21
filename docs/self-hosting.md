@@ -75,6 +75,8 @@ sudo systemctl enable --now ticket-wallet
 
 服务仅监听 `127.0.0.1:3031`。扫描需要 Tesseract 的中文、英文和方向识别语言包；可用 `tesseract --list-langs` 检查 `chi_sim`、`eng`、`osd`。
 
+0.4.0 起，服务器扫描完成后自动生成统一外观的大图和缩略图（无损 WebP）。已有扫描在「扫描与识别」中整理时只补充外观，不重跑 OCR、不修改旅程元数据。各账号默认使用无个人信息的程序化纸色；可选的 `appearance-reference.json` 仅位于该账号自己的收藏目录，格式为 `{"imageUrl":"idb://images/已存在的扫描图片ID"}`，只可引用这个账号的图片，不得跨账号共用私密参考票。程序串行执行处理并检查存储额度；原图、旧扫描和外观配方都保留，备份应包含这些文件。没有 Change Style 选择器，大图的「查看原图」仍可使用。
+
 按车次生成线路还需 README 中自己生成的 `rail-network.rgraph`、`stations.json`，放入私密数据目录，由服务账号读取。低内存主机优先使用 rgraph；旧 pickle 格式仍可读取，但整图加载占用较多内存。服务需要访问 RailGo 的 HTTPS 接口；不会发送照片、姓名、证件号或 OCR 全文。查询串行限速并缓存，禁止把该接口改为未登录的公共代理。保留网页中的 RailGo / OSM 署名；商业部署前另行取得适用数据许可，见 [数据来源](route-data-sources.md)。
 
 ## 4. HTTPS 反向代理

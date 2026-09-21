@@ -9,7 +9,7 @@ import {upgradeAccounts} from '../scripts/upgrade-accounts.mjs'
 import {createWalletServer} from './production.mjs'
 import {createFeedback} from './feedback.mjs'
 
-async function fixture(t,{quota=256*1048576,mailFailure=false,scanSize=20,restoredLegacy=false,routePlanner}={}) {
+async function fixture(t,{quota=256*1048576,mailFailure=false,scanSize=20,restoredLegacy=false,routePlanner,appearanceFactory}={}) {
   const root=await fs.mkdtemp(path.join(os.tmpdir(),'wallet-multi-test-')),dataDir=path.join(root,'data'),distDir=path.join(root,'dist')
   const origin='https://wallet.example'
   await initWallet({dataDir,origin,username:'original-owner'})
@@ -39,7 +39,7 @@ async function fixture(t,{quota=256*1048576,mailFailure=false,scanSize=20,restor
   const mails=[],scans=[]
   const mail=async message=>{if(failMail)throw new Error('Synthetic SMTP failure');mails.push(message)}
   const start=async()=>{
-    server=await createWalletServer({dataDir,distDir,config,serviceConfig,routePlanner,sendMail:mail,now:()=>time,scannerFactory:async directory=>async(source,hash)=>{
+    server=await createWalletServer({dataDir,distDir,config,serviceConfig,routePlanner,appearanceFactory,sendMail:mail,now:()=>time,scannerFactory:async directory=>async(source,hash)=>{
       scans.push(directory);const scanDir=path.join(directory,'scans',hash);await fs.mkdir(scanDir,{recursive:true})
       await fs.writeFile(path.join(scanDir,'processed.jpg'),Buffer.alloc(scanSize,1))
       await fs.writeFile(path.join(scanDir,'thumbnail.jpg'),Buffer.alloc(scanSize,2))
@@ -70,6 +70,67 @@ async function fixture(t,{quota=256*1048576,mailFailure=false,scanSize=20,restor
     advance:ms=>{time+=ms},setMailFailure:value=>{failMail=value},restart:async()=>{await new Promise(resolve=>server.close(resolve));await start()},
   }
 }
+
+const syntheticAppearance=async()=>async ticket=>{
+  const bytes=Buffer.from('synthetic-styled-image'),hash=crypto.createHash('sha256').update(ticket.processedImageUrl).digest('hex')
+  const images=[{id:'paper-v1-'+hash,mime:'image/png',size:bytes.length,bytes},{id:'paper-v1-'+hash+'-thumb',mime:'image/png',size:bytes.length,bytes}]
+  const processedImageUrl='idb://images/'+images[0].id
+  return {images,patch:{processedImageUrl,thumbnailUrl:'idb://images/'+images[1].id,appearance:{version:'paper-v1',imageUrl:processedImageUrl,sourceImageUrl:ticket.processedImageUrl,sourceThumbnailUrl:ticket.thumbnailUrl}}}
+}
+
+test('appearance is private, idempotent and preserves original bytes, metadata and old scans',async t=>{
+  const f=await fixture(t,{appearanceFactory:syntheticAppearance}),owner=await f.owner(),alice=await f.register('alice@example.com')
+  const url='/api/appearance/'+f.id,read=async()=> (await f.request('/api/tickets/'+f.id,{cookie:owner})).json()
+  const before=await read(),source=await fs.readFile(path.join(f.dataDir,'images',f.imageId))
+  assert.equal((await f.request(url,{method:'POST'})).status,401)
+  assert.equal((await f.request(url,{cookie:alice,method:'POST'})).status,404)
+  assert.equal((await f.request(url,{cookie:owner,method:'POST',origin:'https://attacker.example'})).status,403)
+  assert.deepEqual(await(await f.request(url,{cookie:owner,method:'POST'})).json(),{unchanged:false})
+  const after=await read()
+  for(const key of Object.keys(before).filter(key=>!['processedImageUrl','thumbnailUrl'].includes(key)))assert.deepEqual(after[key],before[key])
+  assert.equal(after.appearance.sourceImageUrl,before.processedImageUrl)
+  assert.match(after.processedImageUrl,/^idb:\/\/images\/paper-v1-/)
+  assert.equal(f.scans.length,0)
+  assert.deepEqual(await fs.readFile(path.join(f.dataDir,'images',f.imageId)),source)
+  const media=after.processedImageUrl.replace('idb://images/','/media/')
+  assert.equal((await f.request(media,{cookie:owner})).status,200)
+  assert.equal((await f.request(media,{cookie:alice})).status,404)
+  assert.equal((await f.request(media)).status,401)
+  assert.deepEqual(await(await f.request(url,{cookie:owner,method:'POST'})).json(),{unchanged:true})
+  await f.request('/api/tickets/'+f.id,{cookie:owner,method:'PATCH',data:{story:'new story',appearance:{imageUrl:'bad'},processedImageUrl:'blob:bad'}})
+  assert.equal((await read()).processedImageUrl,after.processedImageUrl)
+  assert.deepEqual((await read()).appearance,after.appearance)
+  await f.restart()
+  const reloaded=await(await f.request('/api/tickets/'+f.id,{cookie:await f.owner()})).json()
+  assert.equal(reloaded.processedImageUrl,after.processedImageUrl);assert.equal(reloaded.story,'new story')
+})
+
+test('new uploads automatically gain styled faces and thumbnails without altering originals',async t=>{
+  const f=await fixture(t,{appearanceFactory:syntheticAppearance}),alice=await f.register('alice@example.com')
+  const raw=Buffer.from('synthetic-new-photo')
+  const response=await f.request('/api/import',{cookie:alice,method:'POST',raw})
+  assert.equal(response.status,200)
+  const {id}=await response.json(),ticket=await(await f.request('/api/tickets/'+id,{cookie:alice})).json()
+  assert.match(ticket.processedImageUrl,/^idb:\/\/images\/paper-v1-/)
+  assert.match(ticket.thumbnailUrl,/-thumb$/)
+  assert.match(ticket.appearance.sourceImageUrl,/^idb:\/\/images\/scan-v3-/)
+  const original=await f.request(ticket.originalImageUrl.replace('idb://images/','/media/'),{cookie:alice})
+  assert.deepEqual(Buffer.from(await original.arrayBuffer()),raw)
+})
+
+test('appearance quota rejection leaves existing collection and files unchanged',async t=>{
+  const f=await fixture(t,{quota:10000,appearanceFactory:async()=>async ticket=>{
+    const result=await(await syntheticAppearance())(ticket)
+    result.images=result.images.map(image=>({...image,bytes:Buffer.alloc(20000),size:20000}))
+    return result
+  }}),alice=await f.register('alice@example.com')
+  assert.equal((await f.request('/api/import',{cookie:alice,method:'POST',raw:Buffer.from('new-photo')})).status,413)
+  assert.deepEqual(await(await f.request('/api/tickets',{cookie:alice})).json(),[])
+  assert.equal(await fs.readFile(path.join(f.dataDir,'manifest.json'),'utf8'),f.legacyManifest)
+  const state=JSON.parse(await fs.readFile(path.join(f.dataDir,'accounts.json'),'utf8'))
+  const dir=path.join(f.dataDir,'users',state.users.find(user=>user.email==='alice@example.com').id)
+  assert.deepEqual(await fs.readdir(path.join(dir,'images')),[])
+})
 
 test('route refresh is private, keeps photos and stories, and protects edits and GPX',async t=>{
   let result={segments:[[[110,30],[111,31]]],distanceKm:100},release,started
