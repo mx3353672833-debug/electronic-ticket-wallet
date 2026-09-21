@@ -9,7 +9,7 @@ import {upgradeAccounts} from '../scripts/upgrade-accounts.mjs'
 import {createWalletServer} from './production.mjs'
 import {createFeedback} from './feedback.mjs'
 
-async function fixture(t,{quota=256*1048576,mailFailure=false,scanSize=20,restoredLegacy=false,routePlanner,appearanceFactory}={}) {
+async function fixture(t,{quota=256*1048576,mailFailure=false,scanSize=20,restoredLegacy=false,routePlanner,appearanceFactory,displayRenderer}={}) {
   const root=await fs.mkdtemp(path.join(os.tmpdir(),'wallet-multi-test-')),dataDir=path.join(root,'data'),distDir=path.join(root,'dist')
   const origin='https://wallet.example'
   await initWallet({dataDir,origin,username:'original-owner'})
@@ -39,7 +39,7 @@ async function fixture(t,{quota=256*1048576,mailFailure=false,scanSize=20,restor
   const mails=[],scans=[]
   const mail=async message=>{if(failMail)throw new Error('Synthetic SMTP failure');mails.push(message)}
   const start=async()=>{
-    server=await createWalletServer({dataDir,distDir,config,serviceConfig,routePlanner,appearanceFactory,sendMail:mail,now:()=>time,scannerFactory:async directory=>async(source,hash)=>{
+    server=await createWalletServer({dataDir,distDir,config,serviceConfig,routePlanner,appearanceFactory,displayRenderer,sendMail:mail,now:()=>time,scannerFactory:async directory=>async(source,hash)=>{
       scans.push(directory);const scanDir=path.join(directory,'scans',hash);await fs.mkdir(scanDir,{recursive:true})
       await fs.writeFile(path.join(scanDir,'processed.jpg'),Buffer.alloc(scanSize,1))
       await fs.writeFile(path.join(scanDir,'thumbnail.jpg'),Buffer.alloc(scanSize,2))
@@ -77,6 +77,22 @@ const syntheticAppearance=async()=>async ticket=>{
   const processedImageUrl='idb://images/'+images[0].id
   return {images,patch:{processedImageUrl,thumbnailUrl:'idb://images/'+images[1].id,appearance:{version:'paper-v1',imageUrl:processedImageUrl,sourceImageUrl:ticket.processedImageUrl,sourceThumbnailUrl:ticket.thumbnailUrl}}}
 }
+
+test('small display images remain authenticated, collection-scoped, no-store and read-only',async t=>{
+  const calls=[]
+  const f=await fixture(t,{displayRenderer:async(dir,image,variant)=>{calls.push({dir,id:image.id,variant});return path.join(dir,'images',image.id)}})
+  const owner=await f.owner(),other=await f.register('display-other@example.com'),route='/media/'+f.imageId+'?view=screen'
+  assert.equal((await f.request(route)).status,401)
+  assert.equal((await f.request(route,{cookie:other})).status,404)
+  assert.equal(calls.length,0)
+  const response=await f.request(route,{cookie:owner})
+  assert.equal(response.status,200);assert.equal(response.headers.get('cache-control'),'no-store')
+  assert.equal(calls.length,1);assert.equal(calls[0].dir,f.dataDir);assert.equal(calls[0].variant,'screen')
+  assert.equal((await f.request('/media/'+f.imageId+'?view=anything',{cookie:owner})).status,400)
+  assert.equal(await fs.readFile(path.join(f.dataDir,'manifest.json'),'utf8'),f.legacyManifest)
+  await f.request('/logout',{cookie:owner,method:'POST'})
+  assert.equal((await f.request(route,{cookie:owner})).status,401)
+})
 
 test('appearance is private, idempotent and preserves original bytes, metadata and old scans',async t=>{
   const f=await fixture(t,{appearanceFactory:syntheticAppearance}),owner=await f.owner(),alice=await f.register('alice@example.com')

@@ -1,21 +1,27 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { renderToStaticMarkup } from 'react-dom/server'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import 'leaflet.markercluster'
+import 'leaflet.markercluster/dist/MarkerCluster.css'
+import {feature} from 'topojson-client'
+import type {Topology,GeometryCollection} from 'topojson-specification'
+import land from 'world-atlas/land-110m.json'
 import { useTicketStore } from '../store/useTicketStore'
 import { formatRoute, matchesSearch, yearScopedTickets } from '../utils/search'
 import { ticketRoute } from '../utils/geo'
 import type { TicketRoute } from '../utils/geo'
-import { TicketFace } from './TicketFace'
 import { createRouteGeometry, geometryLevel } from '../utils/mapGeometry'
+import {warmTicketImage} from '../utils/displayImages'
+
+const baseLand=feature(land as unknown as Topology<{land:GeometryCollection}>,'land')
+const reducedMotion=()=>matchMedia('(prefers-reduced-motion: reduce)').matches
 
 function PhotoMarkers({ map, routes, query, onHover }: { map: L.Map; routes: TicketRoute[]; query: string; onHover: (id: string | null) => void }) {
   const currentQuery = useRef(query)
   const clusterGroup = useRef<L.MarkerClusterGroup | null>(null)
   const markers = useRef<{ ticket: TicketRoute['ticket']; marker: L.Marker; shell: HTMLDivElement }[]>([])
   useEffect(() => {
-    const group = L.markerClusterGroup({ animate: false, animateAddingMarkers: false, maxClusterRadius: 65, showCoverageOnHover: false, spiderfyOnMaxZoom: true, zoomToBoundsOnClick: true, removeOutsideVisibleBounds: true,
+    const group = L.markerClusterGroup({ animate: !reducedMotion(), animateAddingMarkers: false, maxClusterRadius: 65, showCoverageOnHover: false, spiderfyOnMaxZoom: false, zoomToBoundsOnClick: false, removeOutsideVisibleBounds: true,
       iconCreateFunction: cluster => {
         const shell = document.createElement('div')
         shell.className = 'photo-cluster'
@@ -40,15 +46,28 @@ function PhotoMarkers({ map, routes, query, onHover }: { map: L.Map; routes: Tic
       const match = matchesSearch(ticket, currentQuery.current)
       const shell = document.createElement('div')
       shell.className = `map-photo ${currentQuery.current ? match ? 'is-matched' : 'is-dimmed' : ''}`
-      // React escapes every text field before it reaches Leaflet's HTML icon.
-      shell.innerHTML = renderToStaticMarkup(<><div className="map-photo-face"><TicketFace ticket={ticket} thumbnail /></div><span className="map-photo-caption">{ticket.departure?.name || '待核对'} → {ticket.arrival?.name || '待核对'}</span><span className={`map-photo-dot ${ticket.track || ticket.railRoute ? 'has-track' : ''}`} /></>)
+      // Native DOM avoids shipping React's server renderer to every map visitor.
+      const face=L.DomUtil.create('div','map-photo-face',shell)
+      const image=L.DomUtil.create('img','real-ticket',face) as HTMLImageElement
+      image.src=ticket.thumbnailUrl;image.alt=formatRoute(ticket)+' 票面';image.draggable=false;image.decoding='async'
+      const caption=L.DomUtil.create('span','map-photo-caption',shell)
+      caption.textContent=`${ticket.departure?.name || '待核对'} → ${ticket.arrival?.name || '待核对'}`
+      L.DomUtil.create('span',`map-photo-dot ${ticket.track || ticket.railRoute ? 'has-track' : ''}`,shell)
       const marker = L.marker([route.mid.lat, route.mid.lng], { icon: L.divIcon({ html: shell, className: 'photo-marker', iconSize: [130, 86], iconAnchor: [65, 90] }), keyboard: true, title: `${formatRoute(ticket)} ${ticket.takenAt || '日期待补'}`, alt: formatRoute(ticket), riseOnHover: true, match } as L.MarkerOptions)
-      marker.on('click', () => useTicketStore.getState().openTicket(ticket.id))
-      marker.on('mouseover', () => onHover(ticket.id))
+      marker.on('click', () => useTicketStore.getState().openTicket(ticket.id,marker.getElement()?.querySelector('img')))
+      marker.on('mouseover', () => {onHover(ticket.id);warmTicketImage(ticket.processedImageUrl)})
       marker.on('mouseout', () => onHover(null))
       markers.current.push({ ticket, marker, shell })
     }
     group.addLayers(markers.current.map(value => value.marker))
+    group.on('clusterclick',event=>{
+      const cluster=(event as L.LeafletEvent & {layer:L.MarkerCluster}).layer
+      if(map.getZoom()>=18){cluster.spiderfy();return}
+      map.stop()
+      const options={padding:L.point(80,110),maxZoom:18}
+      if(reducedMotion())map.fitBounds(cluster.getBounds(),{...options,animate:false})
+      else map.flyToBounds(cluster.getBounds(),{...options,duration:.58,easeLinearity:.22})
+    })
     map.addLayer(group)
     return () => { map.removeLayer(group); group.clearLayers(); clusterGroup.current = null; markers.current = []; onHover(null) }
   }, [map, routes, onHover])
@@ -66,6 +85,7 @@ function PhotoMarkers({ map, routes, query, onHover }: { map: L.Map; routes: Tic
 }
 
 function MapFrame({ map, routes, fitRequest }: { map: L.Map; routes: TicketRoute[]; fitRequest: number }) {
+  const initialized=useRef(false)
   const bounds = useMemo(() => {
     const points: L.LatLngTuple[] = []
     for (const route of routes) {
@@ -81,7 +101,10 @@ function MapFrame({ map, routes, fitRequest }: { map: L.Map; routes: TicketRoute
       const [west, south, east, north] = key.split(',').map(Number)
       const compact = map.getSize().x < 700
       const trayClearance = Number.parseFloat(getComputedStyle(map.getContainer()).getPropertyValue('--tray-clearance')) || 238
-      map.fitBounds([[south, west], [north, east]], { paddingTopLeft: compact ? [55, 160] : [130, 130], paddingBottomRight: [compact ? 55 : 130, trayClearance + 5], maxZoom: 11, animate: false })
+      const options:L.FitBoundsOptions={paddingTopLeft: compact ? [55,160] : [130,130],paddingBottomRight:[compact?55:130,trayClearance+5],maxZoom:11}
+      if(initialized.current&&!reducedMotion())map.flyToBounds([[south,west],[north,east]],{...options,duration:.55})
+      else map.fitBounds([[south,west],[north,east]],{...options,animate:false})
+      initialized.current=true
     }
   }, [map, key, fitRequest])
   useEffect(() => {
@@ -98,15 +121,17 @@ function RouteLayers({ map, routes, query, hovered, onHover }: { map: L.Map; rou
   const paints = useRef(new Map<string, string>())
   useEffect(() => {
     const group = L.layerGroup().addTo(map)
+    // Canvas's native hit tolerance widens interaction without duplicating route geometry.
+    const renderer=L.canvas({tolerance:11,padding:.35}).addTo(map)
     paints.current.clear()
     rendered.current = routes.map(route => {
       const line = route.ticket.track || route.ticket.railRoute
       const geometry = createRouteGeometry(line?.segments || [])
-      const lines = geometry(map.getZoom()).map(segment => L.polyline(segment, { smoothFactor: .5, lineCap: 'round' })
+      const lines = geometry(map.getZoom()).map(segment => L.polyline(segment, { renderer,smoothFactor: .5, lineCap: 'round' })
         .on('click', () => useTicketStore.getState().openTicket(route.id))
         .on('mouseover', () => onHover(route.id))
         .on('mouseout', () => onHover(null)).addTo(group))
-      const stops = [route.from, route.to].filter((p): p is NonNullable<typeof p> => Boolean(p)).map(p => L.circleMarker([p.lat, p.lng], { color:'#fff', weight:1.5 }).addTo(group))
+      const stops = [route.from, route.to].filter((p): p is NonNullable<typeof p> => Boolean(p)).map(p => L.circleMarker([p.lat, p.lng], { renderer,interactive:false,color:'#fff', weight:1.5 }).addTo(group))
       return { route, lines, stops, geometry }
     })
     let level = geometryLevel(map.getZoom())
@@ -120,7 +145,7 @@ function RouteLayers({ map, routes, query, hovered, onHover }: { map: L.Map; rou
       }
     }
     map.on('zoomend', refreshGeometry)
-    return () => { map.off('zoomend', refreshGeometry); map.removeLayer(group); group.clearLayers(); rendered.current = [] }
+    return () => { map.off('zoomend', refreshGeometry); map.removeLayer(group); group.clearLayers();map.removeLayer(renderer); rendered.current = [] }
   }, [map, routes, onHover])
   useEffect(() => {
     // Hover changes only paint, not geometry or the element under the pointer.
@@ -147,9 +172,12 @@ export function TicketMap({ fitRequest = 0, showPhotos = true }: { fitRequest?: 
   const canvas = useRef<HTMLDivElement>(null)
   const [map, setMap] = useState<L.Map | null>(null)
   useEffect(() => {
-    const instance = L.map(canvas.current!, {center:[34.5,112],zoom:4,zoomSnap:1,zoomDelta:1,zoomControl:false,scrollWheelZoom:true,wheelDebounceTime:80,wheelPxPerZoomLevel:100,preferCanvas:true,zoomAnimation:!matchMedia('(prefers-reduced-motion: reduce)').matches})
-    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {updateWhenZooming:false,keepBuffer:3,attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> · 经停数据 <a href="https://railgo.dev/" target="_blank" rel="noreferrer">RailGo</a>'})
-      .on('tileerror', () => setTileError(true)).addTo(instance)
+    const instance = L.map(canvas.current!, {center:[34.5,112],zoom:4,minZoom:2,maxZoom:19,zoomSnap:1,zoomDelta:1,zoomControl:false,scrollWheelZoom:true,wheelDebounceTime:55,wheelPxPerZoomLevel:100,preferCanvas:true,zoomAnimation:!reducedMotion(),fadeAnimation:!reducedMotion(),inertia:true,inertiaDeceleration:2400})
+    instance.createPane('map-base').style.zIndex='150'
+    L.geoJSON(baseLand,{pane:'map-base',interactive:false,style:{stroke:false,fillColor:'#f3f4f2',fillOpacity:1},attribution:'<a href="https://www.naturalearthdata.com/" target="_blank" rel="noreferrer">Natural Earth</a>'}).addTo(instance)
+    let failures=0
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {updateWhenIdle:false,updateInterval:120,updateWhenZooming:false,keepBuffer:4,maxNativeZoom:19,maxZoom:19,attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> · 经停数据 <a href="https://railgo.dev/" target="_blank" rel="noreferrer">RailGo</a>'})
+      .on('loading',()=>{failures=0}).on('tileerror', () => {failures++}).on('load',()=>setTileError(failures>0)).addTo(instance)
     L.control.zoom({position:'bottomright',zoomInTitle:'放大地图',zoomOutTitle:'缩小地图'}).addTo(instance)
     setMap(instance)
     return () => { instance.remove() }

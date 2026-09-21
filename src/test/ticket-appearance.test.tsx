@@ -33,3 +33,14 @@ it('defaults to the styled face, keeps the original button, and has no style sel
   expect(screen.getByRole('img')).toHaveAttribute('src','/test-styled.webp')
   expect(useTicketStore.getState().tickets[0].story).toBe('原故事')
 })
+
+it('keeps a visible preview while the large image is loading or fails',()=>{
+  const view=render(<TicketFace ticket={ticket} progressive/> )
+  expect(view.container.querySelector('.ticket-preview')).toHaveAttribute('src','/test-thumb.webp')
+  expect(screen.getByRole('img')).toHaveStyle({opacity:'0'})
+  fireEvent.error(screen.getByRole('img'))
+  expect(screen.getByRole('button',{name:'清晰图未载入，点此重试'})).toBeVisible()
+  expect(view.container.querySelector('.ticket-preview')).toBeVisible()
+  fireEvent.load(screen.getByRole('img'))
+  expect(screen.getByRole('img')).toHaveStyle({opacity:'1'})
+})

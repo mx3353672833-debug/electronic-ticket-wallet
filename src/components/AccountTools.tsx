@@ -2,6 +2,7 @@ import {useEffect,useState} from 'react'
 import {Modal} from './Modal'
 import {Icon} from './Icon'
 import {remoteRequest,SERVER_BASE} from '../utils/remote'
+import {clearDisplayImages} from '../utils/displayImages'
 
 type Account={email:string;role:'owner'|'member';usedBytes:number;quotaBytes:number;canInvite?:boolean;feedbackEnabled:boolean}
 type Invitation={id:string;createdAt:number;expiresAt:number;status:'active'|'used'|'revoked'|'expired';token?:string}
@@ -62,7 +63,7 @@ export function AccountTools() {
           </section>}
           {account.role==='owner' && account.feedbackEnabled && <button className="account-link" onClick={()=>void open('inbox')}>收到的建议<Icon name="arrow"/></button>}
           <a className="text-button" href={`${SERVER_BASE}/reset`}>通过邮箱重置密码</a>
-          <form action={`${SERVER_BASE}/logout`} method="post"><button className="account-signout" type="submit">退出登录</button></form>
+          <form action={`${SERVER_BASE}/logout`} method="post" onSubmit={clearDisplayImages}><button className="account-signout" type="submit">退出登录</button></form>
         </>}
         {panel==='feedback' && !notice && <form className="feedback-form" onSubmit={e=>{
           e.preventDefault();setBusy(true);setError('')

@@ -1,4 +1,6 @@
 import { create } from 'zustand'
+import {ticketOrigin, type TicketOrigin} from '../utils/ticketMotion'
+import {displayImageUrl,loadDisplayImage} from '../utils/displayImages'
 import type { Ticket } from '../types/ticket'
 import {
   createId,
@@ -22,6 +24,7 @@ export type WalletState = {
   searchFocused: boolean
   yearRange: YearRange
   selectedTicketId: string | null
+  ticketOrigin: TicketOrigin | null
   storySidebarOpen: boolean
   uploadOpen: boolean
   loadError: string | null
@@ -30,7 +33,7 @@ export type WalletState = {
   setSearchQuery: (q: string) => void
   setSearchFocused: (v: boolean) => void
   setYearRange: (range: YearRange) => void
-  openTicket: (id: string) => void
+  openTicket: (id: string, source?:Element|null) => void
   closeTicket: () => void
   toggleStorySidebar: (open?: boolean) => void
   setUploadOpen: (open: boolean) => void
@@ -72,6 +75,7 @@ export const useTicketStore = create<WalletState>((set, get) => ({
   searchFocused: false,
   yearRange: null,
   selectedTicketId: null,
+  ticketOrigin: null,
   storySidebarOpen: false,
   uploadOpen: false,
   loadError: null,
@@ -101,11 +105,13 @@ export const useTicketStore = create<WalletState>((set, get) => ({
   setSearchFocused: (v) => set({ searchFocused: v }),
   setYearRange: (range) => set({ yearRange: range }),
 
-  openTicket: (id) => {
+  openTicket: (id, source) => {
     const url = new URL(window.location.href)
     url.searchParams.set('ticket', id)
     window.history.replaceState({}, '', url)
-    set({ selectedTicketId: id, storySidebarOpen: false })
+    const ticket=get().tickets.find(t=>t.id===id)
+    if(ticket)void loadDisplayImage(displayImageUrl(ticket.processedImageUrl,'screen')).catch(()=>{})
+    set({ selectedTicketId: id, storySidebarOpen: false, ticketOrigin:ticketOrigin(source) })
   },
 
   closeTicket: () => {

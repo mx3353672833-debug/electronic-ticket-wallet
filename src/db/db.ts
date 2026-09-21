@@ -2,6 +2,7 @@ import Dexie, { type EntityTable } from 'dexie'
 import type { Ticket } from '../types/ticket'
 import { mockTickets } from '../data/mockTickets'
 import { REMOTE, SERVER_BASE, remoteRequest } from '../utils/remote'
+import {clearDisplayImages,displayImageUrl} from '../utils/displayImages'
 
 export type ImageRecord = {
   id: string
@@ -172,6 +173,7 @@ const objectUrlCache = new Map<string, string>()
 
 /** Release in-memory image handles before discarding a wallet session. */
 export function clearResolvedImageUrls(): void {
+  clearDisplayImages()
   objectUrlCache.forEach(url => URL.revokeObjectURL(url))
   objectUrlCache.clear()
 }
@@ -200,7 +202,7 @@ export async function resolveTicketImageUrls(
       ...ticket,
       originalImageUrl: await resolveImageUrl(ticket.originalImageUrl),
       processedImageUrl: await resolveImageUrl(ticket.processedImageUrl),
-      thumbnailUrl: await resolveImageUrl(ticket.thumbnailUrl),
+      thumbnailUrl: displayImageUrl(await resolveImageUrl(ticket.thumbnailUrl),'thumb'),
     })),
   )
 }

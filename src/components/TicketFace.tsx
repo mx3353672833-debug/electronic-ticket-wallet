@@ -1,10 +1,17 @@
 import type { Ticket } from '../types/ticket'
 import { Icon } from './Icon'
 import { TICKET_TYPE_LABELS } from '../types/ticket'
+import {ProgressiveTicketImage} from './ProgressiveTicketImage'
+import {displayImageUrl} from '../utils/displayImages'
 
 /** Real tickets use their saved derivative; the original is an explicit view. */
-export function TicketFace({ ticket, original = false, thumbnail = false }: { ticket: Ticket; original?: boolean; thumbnail?: boolean }) {
+export function TicketFace({ ticket, original = false, thumbnail = false, progressive=false, highResolution=false }: { ticket: Ticket; original?: boolean; thumbnail?: boolean; progressive?:boolean;highResolution?:boolean }) {
   if (!ticket.id.startsWith('mock-')) {
+    if(progressive){
+      const src=original?ticket.originalImageUrl:highResolution?ticket.processedImageUrl:displayImageUrl(ticket.processedImageUrl,'screen')
+      const ratio=original?4/3:ticket.appearance?ticket.appearance.width/ticket.appearance.height:1.59
+      return <ProgressiveTicketImage key={src} src={src} preview={ticket.thumbnailUrl} ratio={ratio} alt={`${ticket.departure?.name||'出发地'} → ${ticket.arrival?.name||'到达地'} 票面`}/>
+    }
     return <img className="real-ticket" src={original ? ticket.originalImageUrl : thumbnail ? ticket.thumbnailUrl : ticket.processedImageUrl} alt={`${ticket.departure?.name || '出发地'} → ${ticket.arrival?.name || '到达地'} 票面`} draggable={false} />
   }
   const flight = ticket.type === 'flight' || ticket.type === 'boarding-pass'

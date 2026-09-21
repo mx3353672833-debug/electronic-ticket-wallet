@@ -14,6 +14,7 @@ import {openCollection} from './collection.mjs'
 import {createRoutePlanner,routeInput,routeSignature} from './train-routes.mjs'
 import {failure,secureEqual} from './private-store.mjs'
 import {createAppearanceRenderer} from './appearance.mjs'
+import {displayImage} from './display-images.mjs'
 
 export {passwordHash}
 const run=promisify(execFile),prefix='/tickets',imagePrefix='idb://images/'
@@ -28,7 +29,7 @@ async function jsonBody(req,limit=16384) {
   try { const value=JSON.parse((await body(req,limit)).toString());if(!value || Array.isArray(value) || typeof value!=='object')throw failure(400,'请求格式错误');return value }
   catch(error){if(error instanceof SyntaxError)throw failure(400,'请求格式错误');throw error}
 }
-export async function createWalletServer({dataDir,distDir,config,scanner,scannerFactory,appearanceFactory,serviceConfig,sendMail,routePlanner,now=()=>Date.now()}) {
+export async function createWalletServer({dataDir,distDir,config,scanner,scannerFactory,appearanceFactory,displayRenderer=displayImage,serviceConfig,sendMail,routePlanner,now=()=>Date.now()}) {
   const multi=Boolean(serviceConfig)
   const mail=sendMail || (multi?createMailer(serviceConfig):null)
   const accounts=multi?await createAccounts({dataDir,config:serviceConfig,sendMail:mail,now}):null
@@ -278,8 +279,14 @@ export async function createWalletServer({dataDir,distDir,config,scanner,scanner
       if(mediaMatch && req.method==='GET') {
         const image=manifest.images.find(i=>i.id===mediaMatch[1])
         if(!image)return json(res,404,{error:'图片不存在'})
-        res.setHeader('Content-Type',/^image\/(jpeg|png|webp|gif|avif)$/.test(image.mime)?image.mime:'application/octet-stream')
-        const stream=createReadStream(path.join(collection.dataDir,'images',image.id));stream.on('error',()=>res.destroy());stream.pipe(res);return
+        const variant=new URL(req.url,config.origin).searchParams.get('view')
+        if(variant && !['screen','thumb'].includes(variant))throw failure(400,'无效展示尺寸')
+        const original=path.join(collection.dataDir,'images',image.id)
+        let file=original
+        if(variant){try{file=await displayRenderer(collection.dataDir,image,variant)}catch{/* Keep the existing photo available if resizing fails. */}}
+        res.setHeader('Content-Type',file!==original?'image/webp':/^image\/(jpeg|png|webp|gif|avif)$/.test(image.mime)?image.mime:'application/octet-stream')
+        res.setHeader('Content-Length',(await fs.stat(file)).size)
+        const stream=createReadStream(file);stream.on('error',()=>res.destroy());stream.pipe(res);return
       }
       if(req.method!=='GET' || !route.startsWith(prefix+'/'))return json(res,404,{error:'Not found'})
       const relative=route.slice(prefix.length+1)||'index.html'
