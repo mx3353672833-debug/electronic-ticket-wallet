@@ -4,13 +4,22 @@ const message=document.querySelector('#auth-message')
 const submit=form.querySelector('[type=submit]')
 const send=document.querySelector('#send-code')
 const invite=form.elements.namedItem('inviteCode')
-if(invite) invite.value=new URL(location.href).searchParams.get('invite')||''
+// The fragment stays in the browser; invitation secrets do not enter proxy URL logs.
+if(invite) invite.value=new URLSearchParams(location.hash.slice(1)).get('invite')||''
 const notify=(text,error=false)=>{message.textContent=text;message.classList.toggle('is-error',error)}
 async function request(route,data) {
   const response=await fetch(`/tickets/auth/${route}`,{method:'POST',headers:{'Content-Type':'application/json','X-Ticket-Wallet':'1'},body:JSON.stringify(data)})
   const result=await response.json().catch(()=>({error:'服务器暂时不可用，请稍后重试'}))
   if(!response.ok) throw new Error(result.error||'操作失败，请重试')
   return result
+}
+if(mode==='register') {
+  const status=document.querySelector('#invitation-status')
+  if(!invite.value)status.textContent='请使用站长发给你的一次性邀请链接打开此页面。'
+  else void request('invitation',{inviteCode:invite.value}).then(()=>{
+    status.textContent='邀请有效，注册成功后此链接将失效。'
+    form.hidden=false
+  }).catch(error=>{status.textContent=error.message})
 }
 send?.addEventListener('click',async()=>{
   const email=form.elements.namedItem('email')

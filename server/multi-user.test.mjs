@@ -29,6 +29,7 @@ async function fixture(t,{quota=256*1048576,mailFailure=false,scanSize=20}={}) {
   await fs.mkdir(distDir);await fs.writeFile(path.join(distDir,'index.html'),'<title>Test wallet</title>')
   const serviceConfig=JSON.parse(await fs.readFile(path.join(dataDir,'service.json'),'utf8'))
   serviceConfig.memberQuotaBytes=quota
+  serviceConfig.inviteCode='legacy-shared-code-must-not-work'
   let time=Date.now(),server,base,failMail=mailFailure
   const mails=[],scans=[]
   const mail=async message=>{if(failMail)throw new Error('Synthetic SMTP failure');mails.push(message)}
@@ -46,8 +47,12 @@ async function fixture(t,{quota=256*1048576,mailFailure=false,scanSize=20}={}) {
   const request=(route,{cookie,method='GET',data,raw,origin:requestOrigin=origin,headers={}}={})=>fetch(base+'/tickets'+route,{method,redirect:'manual',headers:{Origin:requestOrigin,'X-Ticket-Wallet':'1',...(cookie?{Cookie:cookie}:{}),...(!raw?{'Content-Type':'application/json'}:{}),...headers},body:raw|| (data!==undefined?JSON.stringify(data):undefined)})
   const cookie=res=>res.headers.get('set-cookie')?.split(';')[0]
   const password='Synthetic-password-123!'
+  const owner=async()=>{const res=await request('/auth/login',{method:'POST',data:{email:credentials.username,password:credentials.password}});assert.equal(res.status,200);return cookie(res)}
+  const invitations=new Map()
+  const newInvite=async()=>{const res=await request('/api/invitations',{cookie:await owner(),method:'POST'});assert.equal(res.status,201);return res.json()}
+  const invite=async email=>{if(!invitations.has(email))invitations.set(email,(await newInvite()).token);return invitations.get(email)}
   const code=async(email,purpose='register')=>{
-    const res=await request('/auth/send-code',{method:'POST',data:{email,purpose,inviteCode:serviceConfig.inviteCode}})
+    const res=await request('/auth/send-code',{method:'POST',data:{email,purpose,inviteCode:purpose==='register'?await invite(email):undefined}})
     assert.equal(res.status,200)
     const latest=mails.filter(m=>m.to===email).at(-1)
     const value=latest?.text.match(/验证码是：(\d{6})/)?.[1]
@@ -55,10 +60,9 @@ async function fixture(t,{quota=256*1048576,mailFailure=false,scanSize=20}={}) {
     assert.ok(!(await res.text()).includes(value))
     return value
   }
-  const register=async email=>{const value=await code(email);const res=await request('/auth/register',{method:'POST',data:{email,password,code:value,inviteCode:serviceConfig.inviteCode}});assert.equal(res.status,201);return cookie(res)}
-  return {request,cookie,code,register,password,serviceConfig,mails,scans,dataDir,id,imageId,legacyManifest,credentials,
+  const register=async email=>{const value=await code(email);const res=await request('/auth/register',{method:'POST',data:{email,password,code:value,inviteCode:await invite(email)}});assert.equal(res.status,201);return cookie(res)}
+  return {request,cookie,code,register,password,serviceConfig,mails,scans,dataDir,id,imageId,legacyManifest,credentials,owner,invite,newInvite,invitations,
     advance:ms=>{time+=ms},setMailFailure:value=>{failMail=value},restart:async()=>{await new Promise(resolve=>server.close(resolve));await start()},
-    owner:async()=>{const res=await request('/auth/login',{method:'POST',data:{email:credentials.username,password:credentials.password}});assert.equal(res.status,200);return cookie(res)},
   }
 }
 
@@ -103,16 +107,16 @@ test('identical uploads belong to separate users; edits and sessions stay isolat
 
 test('codes are one-use, purpose-bound, expiring, throttled and locked after five mistakes',async t=>{
   const f=await fixture(t),email='alice@example.com',code=await f.code(email)
-  assert.equal((await f.request('/auth/send-code',{method:'POST',data:{email,purpose:'register',inviteCode:f.serviceConfig.inviteCode}})).status,429)
-  for(let i=0;i<5;i++)assert.equal((await f.request('/auth/register',{method:'POST',data:{email,code:code==='000000'?'000001':'000000',password:f.password,inviteCode:f.serviceConfig.inviteCode}})).status,400)
-  assert.equal((await f.request('/auth/register',{method:'POST',data:{email,code,password:f.password,inviteCode:f.serviceConfig.inviteCode}})).status,400)
+  assert.equal((await f.request('/auth/send-code',{method:'POST',data:{email,purpose:'register',inviteCode:await f.invite(email)}})).status,429)
+  for(let i=0;i<5;i++)assert.equal((await f.request('/auth/register',{method:'POST',data:{email,code:code==='000000'?'000001':'000000',password:f.password,inviteCode:await f.invite(email)}})).status,400)
+  assert.equal((await f.request('/auth/register',{method:'POST',data:{email,code,password:f.password,inviteCode:await f.invite(email)}})).status,400)
   f.advance(61000);const expired=await f.code(email);f.advance(600001)
-  assert.equal((await f.request('/auth/register',{method:'POST',data:{email,code:expired,password:f.password,inviteCode:f.serviceConfig.inviteCode}})).status,400)
+  assert.equal((await f.request('/auth/register',{method:'POST',data:{email,code:expired,password:f.password,inviteCode:await f.invite(email)}})).status,400)
   const fresh=await f.code(email)
   assert.equal((await f.request('/auth/reset',{method:'POST',data:{email,code:fresh,password:f.password}})).status,400)
-  const data={email,code:fresh,password:f.password,inviteCode:f.serviceConfig.inviteCode}
+  const data={email,code:fresh,password:f.password,inviteCode:await f.invite(email)}
   const results=await Promise.all([f.request('/auth/register',{method:'POST',data}),f.request('/auth/register',{method:'POST',data})])
-  assert.deepEqual(results.map(r=>r.status).sort(),[201,400])
+  assert.deepEqual(results.map(r=>r.status).sort(),[201,403])
 })
 
 test('password reset verifies mail, revokes all old sessions and does not change tickets',async t=>{
@@ -132,7 +136,7 @@ test('password reset verifies mail, revokes all old sessions and does not change
 
 test('SMTP failure never exposes a code or creates a usable challenge',async t=>{
   const f=await fixture(t,{mailFailure:true})
-  const response=await f.request('/auth/send-code',{method:'POST',data:{email:'alice@example.com',purpose:'register',inviteCode:f.serviceConfig.inviteCode}})
+  const response=await f.request('/auth/send-code',{method:'POST',data:{email:'alice@example.com',purpose:'register',inviteCode:await f.invite('alice@example.com')}})
   assert.equal(response.status,502)
   const state=JSON.parse(await fs.readFile(path.join(f.dataDir,'accounts.json'),'utf8'))
   assert.deepEqual(state.codes,{})
@@ -166,4 +170,50 @@ test('feedback is private to the owner, durable when mail fails, rate limited an
   await feedback.deliver()
   assert.equal(outbox.length,1);assert.equal(outbox[0].to,'owner@example.com');assert.equal(outbox[0].replyTo,'alice@example.com')
   assert.equal(feedback.list({role:'owner'})[0].notification,'sent')
+})
+
+test('one invitation admits only one of two different emails, atomically and across restarts',async t=>{
+  const f=await fixture(t),owner=await f.owner(),invitation=await f.newInvite()
+  const token=invitation.token
+  assert.equal(token.length,43)
+  for(const email of ['alice@example.com','bob@example.com'])f.invitations.set(email,token)
+  // Visiting/validating the link and sending codes do not spend the invitation.
+  for(let i=0;i<2;i++)assert.equal((await f.request('/auth/invitation',{method:'POST',data:{inviteCode:token}})).status,200)
+  const codes=await Promise.all(['alice@example.com','bob@example.com'].map(email=>f.code(email)))
+  const responses=await Promise.all(['alice@example.com','bob@example.com'].map((email,i)=>f.request('/auth/register',{method:'POST',data:{email,code:codes[i],password:f.password,inviteCode:token}})))
+  assert.deepEqual(responses.map(r=>r.status).sort(),[201,403])
+  const state=JSON.parse(await fs.readFile(path.join(f.dataDir,'accounts.json'),'utf8'))
+  assert.equal(state.users.length,2);assert.ok(state.invitations[0].usedAt)
+  assert.ok(!JSON.stringify(state).includes(token))
+  const listed=await (await f.request('/api/invitations',{cookie:owner})).json()
+  assert.equal(listed[0].status,'used');assert.equal(listed[0].token,undefined);assert.equal(listed[0].hash,undefined)
+  const winner=f.cookie(responses.find(r=>r.status===201))
+  for(const method of ['GET','POST'])assert.equal((await f.request('/api/invitations',{cookie:winner,method})).status,403)
+  assert.equal((await f.request('/api/invitations/'+invitation.id,{cookie:winner,method:'DELETE'})).status,403)
+  assert.equal((await f.request('/api/invitations',{method:'POST'})).status,401)
+  assert.equal((await f.request('/api/invitations',{cookie:owner,method:'POST',origin:'https://attacker.example'})).status,403)
+  await f.restart()
+  assert.equal((await f.request('/auth/invitation',{method:'POST',data:{inviteCode:token}})).status,403)
+  assert.equal((await f.request('/auth/send-code',{method:'POST',data:{email:'other@example.com',purpose:'register',inviteCode:token}})).status,403)
+})
+
+test('invites reject legacy/missing tokens, expire, revoke and bind the email code to its link',async t=>{
+  const f=await fixture(t),owner=await f.owner()
+  for(const inviteCode of [undefined,'wrong',f.serviceConfig.inviteCode]) {
+    assert.equal((await f.request('/auth/send-code',{method:'POST',data:{email:'alice@example.com',purpose:'register',inviteCode}})).status,403)
+    assert.equal((await f.request('/auth/register',{method:'POST',data:{email:'alice@example.com',password:f.password,code:'123456',inviteCode}})).status,403)
+  }
+  assert.equal(f.mails.length,0)
+  const code=await f.code('alice@example.com'),original=await f.invite('alice@example.com'),other=await f.newInvite()
+  assert.equal((await f.request('/auth/register',{method:'POST',data:{email:'alice@example.com',code,password:f.password,inviteCode:other.token}})).status,400)
+  assert.equal((await f.request('/auth/invitation',{method:'POST',data:{inviteCode:original}})).status,200)
+  assert.equal((await f.request('/api/invitations/'+other.id,{cookie:owner,method:'DELETE'})).status,200)
+  assert.equal((await f.request('/auth/invitation',{method:'POST',data:{inviteCode:other.token}})).status,403)
+  await f.restart()
+  assert.equal((await f.request('/auth/invitation',{method:'POST',data:{inviteCode:original}})).status,200)
+  assert.equal((await f.request('/auth/invitation',{method:'POST',data:{inviteCode:other.token}})).status,403)
+  f.advance(7*86400000+1)
+  assert.equal((await f.request('/auth/invitation',{method:'POST',data:{inviteCode:original}})).status,403)
+  const page=await (await f.request('/register')).text()
+  assert.match(page,/form[^>]*hidden/);assert.doesNotMatch(page,/朋友发给你的邀请码/)
 })

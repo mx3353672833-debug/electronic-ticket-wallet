@@ -11,7 +11,7 @@ svg { flex-shrink:0; vertical-align:middle; }
 .app-shell.is-tray-collapsed { --tray-clearance:88px; }
 .map-stage,.ticket-map-root { position:absolute; inset:0; }
 .ticket-map-canvas { height:100%; width:100%; z-index:0; background:#e8edf0; font:inherit; }
-.ticket-map-canvas .leaflet-tile-pane { filter:saturate(.23) contrast(.82) brightness(1.12); }
+.ticket-map-canvas .leaflet-tile { filter:saturate(.23) contrast(.82) brightness(1.12); }
 .leaflet-control-attribution { font-size:9px!important; background:#ffffffd9!important; }
 .ticket-map-canvas.leaflet-container .leaflet-control-zoom { margin:0 22px var(--tray-clearance) 0; border:1px solid #00000012; box-shadow:0 2px 8px #00000014; border-radius:8px; overflow:hidden; transition:margin-bottom .22s ease; }
 .ticket-map-canvas.leaflet-container .leaflet-control-zoom a { width:36px; height:36px; line-height:36px; background:#fffffff2; color:#555; font-weight:400; }
@@ -37,7 +37,9 @@ kbd { white-space:nowrap; font:10px var(--mono); color:#86868b; }
 .search-result-item>svg { position:absolute; right:10px; top:22px; }
 .search-result-item:hover,.search-result-item.active { background:#007aff; color:white; }
 .search-result-item.active small,.search-result-item:hover small { color:#ffffffe0; }
-.map-fit { position:absolute; right:22px; top:93px; z-index:490; width:38px; height:38px; display:grid; place-items:center; border-radius:8px; background:#fffffff2; border:1px solid #00000014; box-shadow:0 2px 8px #00000012; color:#505058; }
+.map-controls { position:absolute; right:22px; top:93px; z-index:490; display:flex; gap:8px; }
+.map-fit,.map-photos-toggle { height:38px; display:flex; align-items:center; justify-content:center; gap:6px; border-radius:8px; background:#fffffff2; border:1px solid #00000014; box-shadow:0 2px 8px #00000012; color:#505058; }
+.map-fit { width:38px; }.map-photos-toggle { padding:0 11px; font-size:11px; }.map-photos-toggle[aria-pressed=true] { color:var(--accent); }
 .collection-tray { position:absolute; bottom:18px; left:0; right:0; z-index:490; padding:10px 24px 8px; background:#f9f9fbef; border-top:1px solid #00000012; backdrop-filter:blur(24px); }
 .tray-toolbar { display:flex; gap:16px; align-items:center; height:34px; }
 .tray-toggle { display:flex; align-items:center; justify-content:center; gap:4px; flex-shrink:0; min-height:34px; padding:0 7px; border-radius:6px; font-size:11px; color:var(--muted); }
@@ -175,6 +177,7 @@ form textarea { resize:vertical; line-height:1.8; }
 .batch-errors { max-height:170px; overflow-y:auto; color:#af3528; font-size:11px; }
 @keyframes dialog-enter { from { opacity:0; } to { opacity:1; } }
 .account-modal { width:min(460px,calc(100vw - 24px)); }
+.invitation-list { list-style:none; padding:0; margin:8px 0 0; max-height:160px; overflow:auto; }.invitation-list li { display:flex; justify-content:space-between; align-items:center; gap:12px; padding:8px 0; border-top:1px solid var(--line); font-size:11px; }.invitation-list small { display:block; color:var(--muted); margin-top:5px; }
 .account-email { margin:0; font-size:15px; overflow-wrap:anywhere; }.account-email>span { display:block; color:var(--muted); font-size:11px; margin-top:7px; }
 .account-storage { display:grid; gap:10px; font-size:12px; }.account-storage progress { width:100%; height:6px; accent-color:var(--accent); }.account-storage small { color:var(--muted); font-size:10px; }
 .account-invite { border-top:1px solid var(--line); padding-top:19px; }.account-invite h3 { font-size:13px; font-weight:600; margin:0 0 10px; }.account-invite p { font-size:12px; line-height:1.7; color:var(--muted); }.account-invite label { display:grid; gap:8px; font-size:11px; color:var(--muted); }.account-invite input { padding:10px; font:14px var(--mono); border:1px solid var(--line); border-radius:5px; width:100%; background:#fff; }
@@ -190,7 +193,7 @@ form textarea { resize:vertical; line-height:1.8; }
  .app-header { height:115px; align-items:flex-start; padding:17px 17px 0; gap:12px; }.collection-title h1 { font-size:23px; }.collection-title>span { display:inline; }
  .header-tools { padding-top:0; gap:19px; }.header-tools button { padding:3px; }.add-button>span { display:none; }
  .floating-search { position:absolute; top:66px; left:17px; right:17px; width:auto; }.search-input-wrap { height:34px; }.search-input-wrap kbd { display:none; }
- .map-fit { top:130px; right:15px; }.collection-tray { padding:7px 14px 6px; bottom:18px; }.tray-toolbar { height:36px; }.tray-toggle { min-height:36px; padding:0 4px; }.tray-disclosure-inner::before { height:7px; }
+ .map-controls { top:130px; right:15px; }.collection-tray { padding:7px 14px 6px; bottom:18px; }.tray-toolbar { height:36px; }.tray-toggle { min-height:36px; padding:0 4px; }.tray-disclosure-inner::before { height:7px; }
  .ticket-filmstrip { height:101px; gap:12px; }.film-ticket { flex-basis:123px; }.film-ticket img { width:123px; height:72px; }.film-ticket>span { font-size:9px; }
  .collection-status { font-size:8px; display:block; line-height:1.8; }.collection-status span { display:block; }
  .year-timeline button { padding:5px 7px; font-size:10px; }.random-button { padding:5px; }

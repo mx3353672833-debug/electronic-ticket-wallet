@@ -8,10 +8,14 @@ import { formatRoute, matchesSearch, yearScopedTickets } from '../utils/search'
 import { ticketRoute } from '../utils/geo'
 import type { TicketRoute } from '../utils/geo'
 import { TicketFace } from './TicketFace'
+import { createRouteGeometry, geometryLevel } from '../utils/mapGeometry'
 
 function PhotoMarkers({ map, routes, query, onHover }: { map: L.Map; routes: TicketRoute[]; query: string; onHover: (id: string | null) => void }) {
+  const currentQuery = useRef(query)
+  const clusterGroup = useRef<L.MarkerClusterGroup | null>(null)
+  const markers = useRef<{ ticket: TicketRoute['ticket']; marker: L.Marker; shell: HTMLDivElement }[]>([])
   useEffect(() => {
-    const group = L.markerClusterGroup({ maxClusterRadius: 65, showCoverageOnHover: false, spiderfyOnMaxZoom: true, zoomToBoundsOnClick: true, removeOutsideVisibleBounds: true,
+    const group = L.markerClusterGroup({ animate: false, animateAddingMarkers: false, maxClusterRadius: 65, showCoverageOnHover: false, spiderfyOnMaxZoom: true, zoomToBoundsOnClick: true, removeOutsideVisibleBounds: true,
       iconCreateFunction: cluster => {
         const shell = document.createElement('div')
         shell.className = 'photo-cluster'
@@ -24,27 +28,40 @@ function PhotoMarkers({ map, routes, query, onHover }: { map: L.Map; routes: Tic
         count.className = 'cluster-count'
         count.textContent = String(children.length)
         shell.append(count)
-        shell.classList.toggle('is-dimmed', Boolean(query) && !children.some(m => (m.options as L.MarkerOptions & { match?: boolean }).match))
+        shell.classList.toggle('is-dimmed', Boolean(currentQuery.current) && !children.some(m => (m.options as L.MarkerOptions & { match?: boolean }).match))
         return L.divIcon({ html: shell, className: 'photo-cluster-marker', iconSize: [130, 86], iconAnchor: [65, 90] })
       },
     })
+    clusterGroup.current = group
+    markers.current = []
     for (const route of routes) {
       if (!route.mid) continue
       const ticket = route.ticket
-      const match = matchesSearch(ticket, query)
+      const match = matchesSearch(ticket, currentQuery.current)
       const shell = document.createElement('div')
-      shell.className = `map-photo ${query ? match ? 'is-matched' : 'is-dimmed' : ''}`
+      shell.className = `map-photo ${currentQuery.current ? match ? 'is-matched' : 'is-dimmed' : ''}`
       // React escapes every text field before it reaches Leaflet's HTML icon.
       shell.innerHTML = renderToStaticMarkup(<><div className="map-photo-face"><TicketFace ticket={ticket} thumbnail /></div><span className="map-photo-caption">{ticket.departure?.name || '待核对'} → {ticket.arrival?.name || '待核对'}</span><span className={`map-photo-dot ${ticket.track || ticket.railRoute ? 'has-track' : ''}`} /></>)
       const marker = L.marker([route.mid.lat, route.mid.lng], { icon: L.divIcon({ html: shell, className: 'photo-marker', iconSize: [130, 86], iconAnchor: [65, 90] }), keyboard: true, title: `${formatRoute(ticket)} ${ticket.takenAt || '日期待补'}`, alt: formatRoute(ticket), riseOnHover: true, match } as L.MarkerOptions)
       marker.on('click', () => useTicketStore.getState().openTicket(ticket.id))
       marker.on('mouseover', () => onHover(ticket.id))
       marker.on('mouseout', () => onHover(null))
-      group.addLayer(marker)
+      markers.current.push({ ticket, marker, shell })
     }
+    group.addLayers(markers.current.map(value => value.marker))
     map.addLayer(group)
-    return () => { map.removeLayer(group); group.clearLayers() }
-  }, [map, routes, query, onHover])
+    return () => { map.removeLayer(group); group.clearLayers(); clusterGroup.current = null; markers.current = []; onHover(null) }
+  }, [map, routes, onHover])
+  useEffect(() => {
+    currentQuery.current = query
+    for (const { ticket, marker, shell } of markers.current) {
+      const match = matchesSearch(ticket, query)
+      L.setOptions(marker, { match })
+      shell.classList.toggle('is-matched', Boolean(query) && match)
+      shell.classList.toggle('is-dimmed', Boolean(query) && !match)
+    }
+    clusterGroup.current?.refreshClusters()
+  }, [query, routes])
   return null
 }
 
@@ -77,26 +94,44 @@ function MapFrame({ map, routes, fitRequest }: { map: L.Map; routes: TicketRoute
 
 /** Thin app-owned lifecycle integration with Leaflet, not a third-party React wrapper. */
 function RouteLayers({ map, routes, query, hovered, onHover }: { map: L.Map; routes: TicketRoute[]; query: string; hovered: string | null; onHover: (id: string | null) => void }) {
-  const rendered = useRef<{ route: TicketRoute; lines: L.Polyline[]; stops: L.CircleMarker[] }[]>([])
+  const rendered = useRef<{ route: TicketRoute; lines: L.Polyline[]; stops: L.CircleMarker[]; geometry: ReturnType<typeof createRouteGeometry> }[]>([])
+  const paints = useRef(new Map<string, string>())
   useEffect(() => {
     const group = L.layerGroup().addTo(map)
+    paints.current.clear()
     rendered.current = routes.map(route => {
       const line = route.ticket.track || route.ticket.railRoute
-      const lines = (line?.segments || []).map(segment => L.polyline(segment.map(p => [p[1], p[0]] as L.LatLngTuple), { smoothFactor: .25, lineCap: 'round' })
+      const geometry = createRouteGeometry(line?.segments || [])
+      const lines = geometry(map.getZoom()).map(segment => L.polyline(segment, { smoothFactor: .5, lineCap: 'round' })
         .on('click', () => useTicketStore.getState().openTicket(route.id))
         .on('mouseover', () => onHover(route.id))
         .on('mouseout', () => onHover(null)).addTo(group))
       const stops = [route.from, route.to].filter((p): p is NonNullable<typeof p> => Boolean(p)).map(p => L.circleMarker([p.lat, p.lng], { color:'#fff', weight:1.5 }).addTo(group))
-      return { route, lines, stops }
+      return { route, lines, stops, geometry }
     })
-    return () => { map.removeLayer(group); group.clearLayers(); rendered.current = [] }
+    let level = geometryLevel(map.getZoom())
+    const refreshGeometry = () => {
+      const nextLevel = geometryLevel(map.getZoom())
+      if (level === nextLevel) return
+      level = nextLevel
+      for (const { geometry, lines } of rendered.current) {
+        const segments = geometry(map.getZoom())
+        lines.forEach((line, index) => line.setLatLngs(segments[index]))
+      }
+    }
+    map.on('zoomend', refreshGeometry)
+    return () => { map.off('zoomend', refreshGeometry); map.removeLayer(group); group.clearLayers(); rendered.current = [] }
   }, [map, routes, onHover])
   useEffect(() => {
     // Hover changes only paint, not geometry or the element under the pointer.
-    for (const {route,lines,stops} of rendered.current) {
+    for (const item of rendered.current) {
+      const {route,lines,stops} = item
       const dimmed = Boolean(query) && !matchesSearch(route.ticket, query)
       const active = hovered === route.id || (Boolean(query) && !dimmed)
       const color = route.ticket.track ? '#248a3d' : '#007aff'
+      const paint = `${dimmed}:${active}:${color}`
+      if (paints.current.get(route.id) === paint) continue
+      paints.current.set(route.id, paint)
       lines.forEach(line => line.setStyle({color,weight:active ? 4.5 : 2.5,opacity:dimmed ? .07 : active ? 1 : .55}))
       stops.forEach(stop => { stop.setRadius(active ? 5 : 3); stop.setStyle({fillColor:color,fillOpacity:dimmed ? .2 : 1,opacity:dimmed ? .2 : 1}) })
     }
@@ -104,7 +139,7 @@ function RouteLayers({ map, routes, query, hovered, onHover }: { map: L.Map; rou
   return null
 }
 
-export function TicketMap({ fitRequest = 0 }: { fitRequest?: number }) {
+export function TicketMap({ fitRequest = 0, showPhotos = true }: { fitRequest?: number; showPhotos?: boolean }) {
   const { tickets, searchQuery, yearRange, openTicket } = useTicketStore()
   const [hovered, setHovered] = useState<string | null>(null)
   const [tileError, setTileError] = useState(false)
@@ -112,8 +147,8 @@ export function TicketMap({ fitRequest = 0 }: { fitRequest?: number }) {
   const canvas = useRef<HTMLDivElement>(null)
   const [map, setMap] = useState<L.Map | null>(null)
   useEffect(() => {
-    const instance = L.map(canvas.current!, {center:[34.5,112],zoom:4,zoomSnap:.25,zoomDelta:.5,zoomControl:false,scrollWheelZoom:true})
-    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> · 蓝线：路网推算'})
+    const instance = L.map(canvas.current!, {center:[34.5,112],zoom:4,zoomSnap:1,zoomDelta:1,zoomControl:false,scrollWheelZoom:true,wheelDebounceTime:80,wheelPxPerZoomLevel:100,preferCanvas:true,zoomAnimation:!matchMedia('(prefers-reduced-motion: reduce)').matches})
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {updateWhenZooming:false,keepBuffer:3,attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> · 蓝线：未核实车次的路网推算'})
       .on('tileerror', () => setTileError(true)).addTo(instance)
     L.control.zoom({position:'bottomright',zoomInTitle:'放大地图',zoomOutTitle:'缩小地图'}).addTo(instance)
     setMap(instance)
@@ -126,10 +161,10 @@ export function TicketMap({ fitRequest = 0 }: { fitRequest?: number }) {
   const hoveredRoute = routes.find(r => r.id === hovered)
   return <div className="ticket-map-root" data-testid="ticket-map-home">
     <div ref={canvas} className="ticket-map-canvas" />
-    {map && <><MapFrame map={map} routes={mapped} fitRequest={fitRequest} /><RouteLayers map={map} routes={mapped} query={searchQuery} hovered={hovered} onHover={setHovered} /><PhotoMarkers map={map} routes={mapped} query={searchQuery} onHover={setHovered} /></>}
+    {map && <><MapFrame map={map} routes={mapped} fitRequest={fitRequest} /><RouteLayers map={map} routes={mapped} query={searchQuery} hovered={hovered} onHover={setHovered} />{showPhotos && <PhotoMarkers map={map} routes={mapped} query={searchQuery} onHover={setHovered} />}</>}
     {tileError && <div className="map-notice" role="status">底图暂时无法加载，票据和轨迹仍可浏览。请检查网络后刷新。</div>}
     {noHits && <div className="map-feedback" role="status">没有匹配的票<button onClick={() => useTicketStore.getState().setSearchQuery('')}>清除搜索</button></div>}
-    {hoveredRoute && <div className="route-tooltip"><strong>{formatRoute(hoveredRoute.ticket)}</strong><span>{hoveredRoute.ticket.takenAt || '日期待核对'} · {hoveredRoute.ticket.track ? '已导入实际轨迹' : hoveredRoute.ticket.railRoute ? '铁路路网推算 · 待核对' : '仅标出站点 · 尚无线路'}</span></div>}
+    {hoveredRoute && <div className="route-tooltip"><strong>{formatRoute(hoveredRoute.ticket)} · {hoveredRoute.ticket.carrierOrTrainNo || '车次待补'}</strong><span>{hoveredRoute.ticket.takenAt || '日期待核对'} · {hoveredRoute.ticket.track ? '已导入轨迹' : hoveredRoute.ticket.railRoute ? '按起终站推算 · 未核实本车次经由' : '仅标出站点 · 尚无线路'}</span></div>}
     {missing.length > 0 && <div className="unplaced-tickets"><button className="glass-button" aria-expanded={showUnplaced} onClick={() => setShowUnplaced(!showUnplaced)}>{missing.length} 张票待定位</button>{showUnplaced && <div className="unplaced-list">{missing.filter(r => matchesSearch(r.ticket, searchQuery)).map(r => <button key={r.id} onClick={() => openTicket(r.id)}><img src={r.ticket.thumbnailUrl} alt="" loading="lazy" /><span>{formatRoute(r.ticket)}<small>补充地点或导入轨迹</small></span></button>)}</div>}</div>}
   </div>
 }

@@ -3,7 +3,8 @@ import {Modal} from './Modal'
 import {Icon} from './Icon'
 import {remoteRequest,SERVER_BASE} from '../utils/remote'
 
-type Account={email:string;role:'owner'|'member';usedBytes:number;quotaBytes:number;inviteCode?:string;feedbackEnabled:boolean}
+type Account={email:string;role:'owner'|'member';usedBytes:number;quotaBytes:number;canInvite?:boolean;feedbackEnabled:boolean}
+type Invitation={id:string;createdAt:number;expiresAt:number;status:'active'|'used'|'revoked'|'expired';token?:string}
 type Suggestion={id:string;email:string;category:'suggestion'|'bug';message:string;createdAt:string;status:'new'|'read'|'resolved';notification:'pending'|'sent'}
 const size=(bytes:number)=>bytes>=1024**3?`${(bytes/1024**3).toFixed(1)} GB`:`${(bytes/1024**2).toFixed(1)} MB`
 
@@ -16,12 +17,21 @@ export function AccountTools() {
   const [notice,setNotice]=useState('')
   const [busy,setBusy]=useState(false)
   const [items,setItems]=useState<Suggestion[]>([])
+  const [invitations,setInvitations]=useState<Invitation[]>([])
+  const [inviteLink,setInviteLink]=useState('')
+  const [inviteId,setInviteId]=useState('')
   useEffect(()=>{void remoteRequest<Account>('/account').then(setAccount).catch(()=>{})},[])
   const open=async(next:NonNullable<typeof panel>)=>{
     setPanel(next);setError('');setNotice('');setBusy(true)
     try {
       if(next==='inbox')setItems(await remoteRequest<Suggestion[]>('/feedback'))
-      else setAccount(await remoteRequest<Account>('/account'))
+      else {
+        const value=await remoteRequest<Account>('/account');setAccount(value)
+        if(next==='account' && value.canInvite) {
+          const links=await remoteRequest<Invitation[]>('/invitations');setInvitations(links)
+          if(inviteId && !links.some(i=>i.id===inviteId && i.status==='active'))setInviteLink('')
+        }
+      }
     } catch(e){setError((e as Error).message)}finally{setBusy(false)}
   }
   return <>
@@ -36,7 +46,20 @@ export function AccountTools() {
         {panel==='account' && account && <>
           <p className="account-email">{account.email||'原票夹账号'}<span>{account.role==='owner'?'站长':'个人票夹'}</span></p>
           <div className="account-storage"><span>已用 {size(account.usedBytes)}{account.quotaBytes>0?` / ${size(account.quotaBytes)}`:''}</span>{account.quotaBytes>0 && <progress value={account.usedBytes} max={account.quotaBytes}/>}<small>包含原图、扫描文件和站内恢复记录。</small></div>
-          {account.inviteCode && <section className="account-invite"><h3>邀请朋友</h3><p>朋友用邮箱验证码和邀请码注册，各自拥有独立票夹。</p><label>邀请码<input aria-label="邀请码" readOnly value={account.inviteCode} onFocus={e=>e.currentTarget.select()}/></label><button type="button" className="text-button" onClick={()=>{void navigator.clipboard.writeText(`${location.origin}${SERVER_BASE}/register?invite=${encodeURIComponent(account.inviteCode!)}`).then(()=>setNotice('邀请链接已复制')).catch(()=>setError('无法复制，请手动复制邀请码'))}}>复制邀请链接</button></section>}
+          {account.canInvite && <section className="account-invite"><h3>邀请朋友</h3><p>每条链接限注册一个账号，7 天内有效。打开链接或获取验证码不占用名额。链接仅生成时显示，请复制后私下发送。</p>
+            <button type="button" className="text-button" disabled={busy} onClick={()=>{
+              setBusy(true);setError('');setNotice('')
+              void remoteRequest<Invitation>('/invitations',{method:'POST'}).then(value=>{
+                setInviteLink(`${location.origin}${SERVER_BASE}/register#invite=${encodeURIComponent(value.token!)}`)
+                setInviteId(value.id)
+                setInvitations(current=>[value,...current]);setNotice('已生成新链接，只能注册一次。')
+              }).catch(e=>setError(e.message)).finally(()=>setBusy(false))
+            }}>生成一次性邀请链接</button>
+            {inviteLink && <><label>新邀请链接<input aria-label="新邀请链接" readOnly value={inviteLink} onFocus={e=>e.currentTarget.select()}/></label><button type="button" className="text-button" onClick={()=>{void navigator.clipboard.writeText(inviteLink).then(()=>setNotice('邀请链接已复制')).catch(()=>setError('无法复制，请选中上方链接手动复制'))}}>复制邀请链接</button></>}
+            <ul className="invitation-list">{invitations.map((item)=><li key={item.id}><span>{new Date(item.createdAt).toLocaleString('zh-CN')}<small>{({active:'待使用',used:'已使用',revoked:'已撤销',expired:'已过期'})[item.status]}</small></span>{item.status==='active' && <button className="text-button" disabled={busy} aria-label={`撤销邀请 ${new Date(item.createdAt).toLocaleString('zh-CN')}`} onClick={()=>{
+              setBusy(true);setError('');void remoteRequest<Invitation>(`/invitations/${item.id}`,{method:'DELETE'}).then(value=>{setInvitations(current=>current.map(i=>i.id===value.id?value:i));if(item.id===inviteId)setInviteLink('');setNotice('邀请已撤销。')}).catch(e=>setError(e.message)).finally(()=>setBusy(false))
+            }}>撤销</button>}</li>)}</ul>
+          </section>}
           {account.role==='owner' && account.feedbackEnabled && <button className="account-link" onClick={()=>void open('inbox')}>收到的建议<Icon name="arrow"/></button>}
           <a className="text-button" href={`${SERVER_BASE}/reset`}>通过邮箱重置密码</a>
           <form action={`${SERVER_BASE}/logout`} method="post"><button className="account-signout" type="submit">退出登录</button></form>

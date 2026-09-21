@@ -46,7 +46,7 @@ sudo chown -R ticket-wallet:ticket-wallet /var/lib/ticket-wallet
 
 以上对象是 `smtp` 字段的值，不是完整 service.json。465 使用 TLS；587 应设 `secure: false`，服务仍强制 STARTTLS。这里通常填写邮件服务的授权码，而不是网页登录密码。文件权限须为 0600，归服务用户所有，不要提交到 Git。未配置邮件时注册 / 找回密码不可用，不会在日志中输出验证码供绕过。
 
-默认 `registration: "invite"`，站长登录后在「账号」中复制邀请链接。`feedbackTo` 为接收建议通知的邮箱。`memberQuotaBytes` 影响新账号；已有账号额度在私密 accounts.json 的对应用户记录中维护。修改这些配置前备份、停止服务，修改后再启动；不要与运行中的写操作竞争。当前只支持一个服务进程。
+仅支持 `registration: "invite"`，站长登录后在「账号」中生成一次性邀请链接。每个链接限成功注册一个账号，7 天有效，可撤销；打开或发送验证码不会核销，注册时原子核销。链接以 URL fragment 携带令牌，服务端仅存摘要。旧 `inviteCode` 配置不再生效，不支持开放注册。`feedbackTo` 为接收建议通知的邮箱。`memberQuotaBytes` 影响新账号；已有账号额度在私密 accounts.json 的对应用户记录中维护。修改这些配置前备份、停止服务，修改后再启动；不要与运行中的写操作竞争。当前只支持一个服务进程。
 
 新安装的 `stations.json` 和 `routes.json` 是空对象，收藏为空。可以上传和手动录入票面信息；自动站名匹配与路网定位需要按 README 准备自己的数据。也可以直接给每张票导入 GPX / GeoJSON。
 

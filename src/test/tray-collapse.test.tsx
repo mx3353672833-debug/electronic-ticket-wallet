@@ -4,8 +4,9 @@ import App from '../App'
 import { mockTickets } from '../data/mockTickets'
 import { useTicketStore } from '../store/useTicketStore'
 import { readTrayCollapsed, saveTrayCollapsed, TRAY_PREFERENCE_KEY } from '../utils/trayPreference'
+import { readMapPhotos, saveMapPhotos, MAP_PHOTOS_KEY } from '../utils/mapPreference'
 
-vi.mock('../components/TicketMap', () => ({ TicketMap: () => <div>Test map</div> }))
+vi.mock('../components/TicketMap', () => ({ TicketMap: ({showPhotos}:{showPhotos:boolean}) => <div data-testid="map" data-photos={showPhotos}>Test map</div> }))
 
 beforeEach(() => {
   localStorage.clear()
@@ -14,6 +15,20 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.restoreAllMocks() })
 
 describe('collapsible ticket tray', () => {
+  it('hides only map photos, persists the choice and preserves tickets and search',async()=>{
+    const view=render(<App/>);await screen.findByTestId('map')
+    fireEvent.change(screen.getByRole('searchbox'),{target:{value:'G503'}})
+    fireEvent.click(screen.getByRole('button',{name:'只看轨迹线'}))
+    expect(screen.getByRole('button',{name:'只看轨迹线'})).toHaveAttribute('aria-pressed','true')
+    expect(screen.getByTestId('map')).toHaveAttribute('data-photos','false')
+    expect(localStorage.getItem(MAP_PHOTOS_KEY)).toBe('false')
+    expect(useTicketStore.getState().searchQuery).toBe('G503')
+    expect(useTicketStore.getState().tickets).toHaveLength(3)
+    view.unmount();render(<App/>);await screen.findByTestId('map')
+    expect(screen.getByRole('button',{name:'只看轨迹线'})).toHaveAttribute('aria-pressed','true')
+    fireEvent.click(screen.getByRole('button',{name:'只看轨迹线'}))
+    expect(screen.getByTestId('map')).toHaveAttribute('data-photos','true')
+  })
   it('starts compact, expands accessibly and hides the filmstrip from keyboard navigation when collapsed', () => {
     render(<App />)
     const toggle=screen.getByRole('button',{name:'展开票据栏'})
@@ -55,6 +70,8 @@ describe('collapsible ticket tray', () => {
     vi.spyOn(Storage.prototype,'getItem').mockImplementation(()=>{throw new Error('blocked')})
     vi.spyOn(Storage.prototype,'setItem').mockImplementation(()=>{throw new Error('blocked')})
     expect(readTrayCollapsed()).toBe(true)
+    expect(readMapPhotos()).toBe(true)
+    expect(()=>saveMapPhotos(false)).not.toThrow()
     expect(()=>saveTrayCollapsed(false)).not.toThrow()
     render(<App />)
     fireEvent.click(screen.getByRole('button',{name:'展开票据栏'}))

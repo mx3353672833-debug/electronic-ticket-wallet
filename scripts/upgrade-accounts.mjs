@@ -25,7 +25,7 @@ export async function upgradeAccounts({dataDir,ownerEmail,dryRun=false}) {
   if(dryRun)return report
   const owner={id:crypto.randomUUID(),email,role:'owner',storage:'legacy',legacyUsername:String(auth.username).toLowerCase(),salt:auth.salt,passwordHash:auth.passwordHash,emailVerified:false,quotaBytes:2*1024*1048576,createdAt:new Date().toISOString()}
   await fs.writeFile(path.join(dataDir,'accounts.json'),JSON.stringify({version:1,codeSecret:crypto.randomBytes(32).toString('hex'),users:[owner],codes:{},events:[]}),{flag:'wx',mode:0o600})
-  await fs.writeFile(path.join(dataDir,'service.json'),JSON.stringify({registration:'invite',inviteCode:crypto.randomBytes(12).toString('base64url'),maxUsers:20,memberQuotaBytes:256*1048576,feedbackTo:email,smtp:null}),{flag:'wx',mode:0o600})
+  await fs.writeFile(path.join(dataDir,'service.json'),JSON.stringify({registration:'invite',maxUsers:20,memberQuotaBytes:256*1048576,feedbackTo:email,smtp:null}),{flag:'wx',mode:0o600})
   return report
 }
 if(process.argv[1] && path.resolve(process.argv[1])===fileURLToPath(import.meta.url)) {

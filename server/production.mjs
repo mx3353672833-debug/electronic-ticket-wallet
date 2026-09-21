@@ -98,7 +98,7 @@ export async function createWalletServer({dataDir,distDir,config,scanner,scanner
         const mode=route.split('/').pop()
         if(mode!=='login' && !multi)return json(res,404,{error:'当前服务未启用注册'})
         res.setHeader('Content-Type','text/html; charset=utf-8')
-        return res.end(authPage(mode,{invite:serviceConfig?.registration==='invite'}))
+        return res.end(authPage(mode))
       }
       if(route==='/tickets/login' && req.method==='POST') {
         const form=new URLSearchParams((await body(req,4096)).toString())
@@ -112,6 +112,7 @@ export async function createWalletServer({dataDir,distDir,config,scanner,scanner
         if(route==='/tickets/auth/login') {createSession(res,await login(req,input.email,input.password));return json(res,200,{ok:true})}
         if(!multi)return json(res,404,{error:'当前服务未启用注册'})
         const ip=String(req.headers['x-real-ip']||req.socket.remoteAddress)
+        if(route==='/tickets/auth/invitation')return accounts.inviteValid(input.inviteCode)?json(res,200,{ok:true}):json(res,403,{error:'邀请链接无效、已使用或已过期，请向站长索取新链接'})
         if(route==='/tickets/auth/send-code')return json(res,200,await accounts.sendCode(input,ip))
         if(route==='/tickets/auth/register') {createSession(res,await accounts.register(input,ip));return json(res,201,{ok:true})}
         if(route==='/tickets/auth/reset') {const reset=await accounts.reset(input,ip);revoke(reset.id);createSession(res,reset);return json(res,200,{ok:true})}
@@ -123,6 +124,12 @@ export async function createWalletServer({dataDir,distDir,config,scanner,scanner
       }
       if(route===prefix+'/logout' && req.method==='POST') {sessions.delete(token);res.setHeader('Set-Cookie',cookie('',0));return redirect(res,prefix+'/login')}
       if(route.startsWith(prefix+'/api/') && writes && req.headers['x-ticket-wallet']!=='1')return json(res,403,{error:'缺少请求校验'})
+      if(multi && route===prefix+'/api/invitations') {
+        if(req.method==='GET')return json(res,200,accounts.listInvitations(user))
+        if(req.method==='POST')return json(res,201,await accounts.createInvitation(user))
+      }
+      const inviteMatch=route.match(/^\/tickets\/api\/invitations\/([a-zA-Z0-9-]+)$/)
+      if(multi && inviteMatch && req.method==='DELETE')return json(res,200,await accounts.revokeInvitation(user,inviteMatch[1]))
       if(multi && route===prefix+'/api/feedback') {
         if(req.method==='POST')return json(res,201,await feedback.submit(user,await jsonBody(req)))
         if(req.method==='GET')return json(res,200,feedback.list(user))
@@ -131,7 +138,7 @@ export async function createWalletServer({dataDir,distDir,config,scanner,scanner
       if(multi && feedbackMatch && req.method==='PATCH')return json(res,200,await feedback.update(user,feedbackMatch[1],(await jsonBody(req)).status))
       const collection=await getCollection(user),{commit,processTicket,serial}=collection
       const manifest=collection.manifest
-      if(route===prefix+'/api/account' && req.method==='GET')return json(res,200,{...(accounts?accounts.publicUser(user):{role:'owner',email:''}),usedBytes:await collection.usageBytes(),quotaBytes:user.quotaBytes,registration:serviceConfig?.registration||'disabled',...(user.role==='owner' && serviceConfig?.registration==='invite'?{inviteCode:serviceConfig.inviteCode}:{}),feedbackEnabled:multi})
+      if(route===prefix+'/api/account' && req.method==='GET')return json(res,200,{...(accounts?accounts.publicUser(user):{role:'owner',email:''}),usedBytes:await collection.usageBytes(),quotaBytes:user.quotaBytes,registration:multi?'invite':'disabled',canInvite:multi && user.role==='owner',feedbackEnabled:multi})
       if(route===prefix+'/api/tickets' && req.method==='GET')return json(res,200,manifest.tickets)
       const ticketMatch=route.match(/^\/tickets\/api\/tickets\/([a-zA-Z0-9-]{1,160})$/)
       if(ticketMatch) {
