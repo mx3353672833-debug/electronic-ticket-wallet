@@ -120,6 +120,11 @@ export function localProcessing(): Plugin {
         }
         res.writeHead(404); res.end('Not found')
       } catch (error) {
+        if(url.pathname==='/__local/train-route'){
+          const issue=error as Error & {status?:number;retryAfter?:number}
+          res.writeHead(issue.status || 500,{'Content-Type':'application/json',...(issue.retryAfter?{'Retry-After':String(issue.retryAfter)}:{})})
+          res.end(JSON.stringify({error:issue.status?issue.message:'线路更新失败，请稍后重试',retryAfter:issue.retryAfter}));return
+        }
         const missing = (error as NodeJS.ErrnoException).code === 'ENOENT'
         res.writeHead(missing ? 404 : 500, { 'Content-Type':'application/json' })
         res.end(JSON.stringify({ error: missing ? '尚未扫描这张照片' : '本机扫描失败，原图未改变，请重试' }))

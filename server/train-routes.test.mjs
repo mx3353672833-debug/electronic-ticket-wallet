@@ -45,7 +45,7 @@ test('boarding after midnight queries the originating service day',async t=>{
 })
 test('rate limit aborts and cools down; missing stops never reach the router',async t=>{
   const limited=await fixture(t,()=>new Response('',{status:429}))
-  await assert.rejects(limited.planner(ticket),{status:503});await assert.rejects(limited.planner(ticket),{status:503});assert.equal(limited.calls.length,1)
+  await assert.rejects(limited.planner(ticket),{status:503,retryAfter:60});await assert.rejects(limited.planner(ticket),{status:503});assert.equal(limited.calls.length,1)
   const missing=await fixture(t,()=>Response.json(schedule(['甲','乙'])))
   assert.equal(await missing.planner(ticket),null);assert.equal(missing.computed.length,0)
   assert.equal(await missing.planner({...ticket,track:{}}),null);assert.equal(missing.calls.length,2)

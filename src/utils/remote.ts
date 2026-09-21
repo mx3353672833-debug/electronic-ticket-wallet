@@ -5,7 +5,7 @@ export async function remoteRequest<T>(path: string, options: RequestInit = {}):
   if (!response.ok) {
     if (response.status === 401) throw new Error('登录已过期，请刷新页面重新登录')
     const body = await response.json().catch(() => ({}))
-    throw new Error(body.error || '服务器暂时不可用，请重试')
+    throw Object.assign(new Error(body.error || '服务器暂时不可用，请重试'),{status:response.status,retryAfter:Number(body.retryAfter)||0})
   }
   return response.json()
 }

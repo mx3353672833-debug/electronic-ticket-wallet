@@ -33,10 +33,11 @@ export function selectStops(payload,input) {
   return {stops:stops.slice(a,b+1),boardingDay:stops[a].day,runDays:Array.isArray(data.rundays)?data.rundays.filter(d=>/^\d{8}$/.test(d)):[]}
 }
 
-export function createRoutePlanner({cacheDir,fetchImpl=fetch,now=()=>Date.now(),compute,minInterval=1500}={}) {
+export function createRoutePlanner({cacheDir,fetchImpl=fetch,now=()=>Date.now(),compute,minInterval=5000}={}) {
   const directory=path.join(cacheDir,'train-route-cache')
   let graph=path.join(cacheDir,'rail-network.rgraph')
   let queue=Promise.resolve(),pending=0,nextRequest=0,cooldown=0
+  const busy=()=>Object.assign(failure(503,'线路服务暂时繁忙，请稍后重试'),{retryAfter:Math.max(1,Math.ceil((cooldown-now())/1000))})
   const read=async key=>{
     try{const item=JSON.parse(await fs.readFile(path.join(directory,key+'.json'),'utf8'));return item.expires>now()?item.value:undefined}catch{return undefined}
   }
@@ -49,12 +50,15 @@ export function createRoutePlanner({cacheDir,fetchImpl=fetch,now=()=>Date.now(),
   }
   async function query(url,key,maxBytes=1048576) {
     const cached=await read(key);if(cached!==undefined)return cached
-    if(cooldown>now())throw failure(503,'线路服务暂时繁忙，请稍后重试')
+    if(cooldown>now())throw busy()
     const delay=nextRequest-now();if(delay>0)await new Promise(resolve=>setTimeout(resolve,delay))
     nextRequest=now()+minInterval
     let res
     try{res=await fetchImpl(url,{signal:AbortSignal.timeout(10000),redirect:'error',headers:{Accept:'application/json'}})}catch{throw failure(502,'线路查询暂时失败，请稍后重试')}
-    if(res.status===429 || res.status===403){cooldown=now()+60000;throw failure(503,'线路服务暂时繁忙，请稍后重试')}
+    if(res.status===429 || res.status===403){
+      const header=res.headers.get('Retry-After'),seconds=Number(header)||((Date.parse(header)-now())/1000)
+      cooldown=now()+Math.min(900,Math.max(60,Number.isFinite(seconds)?seconds:60))*1000;throw busy()
+    }
     if(res.status===400 || res.status===404)return write(key,null,86400000)
     if(!res.ok)throw failure(502,'线路查询暂时失败，请稍后重试')
     const chunks=[];let bytes=0

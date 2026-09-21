@@ -258,7 +258,10 @@ export async function createWalletServer({dataDir,distDir,config,scanner,scanner
       res.setHeader('Content-Type',mimeTypes[path.extname(relative)]||'application/octet-stream')
       res.end(await fs.readFile(path.join(distDir,relative)))
     } catch(error) {
-      if(!res.headersSent)json(res,error.status||(error.code==='ENOENT'?404:500),{error:error.status?error.message:'处理失败，原有收藏未改变，请重试'})
+      if(!res.headersSent){
+        if(error.retryAfter)res.setHeader('Retry-After',String(error.retryAfter))
+        json(res,error.status||(error.code==='ENOENT'?404:500),{error:error.status?error.message:'处理失败，原有收藏未改变，请重试',...(error.retryAfter?{retryAfter:error.retryAfter}:{})})
+      }
       else res.destroy()
       if(!error.status)console.error('wallet-request-failed',error.code||error.name||'Error')
     }

@@ -25,3 +25,11 @@ it('bulk update skips imported tracks and reports unavailable results without er
   expect(result).toMatchObject({total:1,completed:1,updated:0,unavailable:1,failed:[]});expect(request).toHaveBeenCalledTimes(1)
   expect((await db.tickets.get(ticket.id))?.railRoute).toEqual(route)
 })
+it('waits and retries the same ticket after a temporary rate limit',async()=>{
+  await db.tickets.put({...mockTickets[0],id:'user-route'})
+  const request=vi.fn().mockResolvedValueOnce(Response.json({error:'服务繁忙',retryAfter:0.001},{status:503})).mockResolvedValueOnce(Response.json({status:'updated',railRoute:route}))
+  vi.stubGlobal('fetch',request);const messages:string[]=[]
+  const result=await updateAllTrainRoutes(progress=>messages.push(progress.current))
+  expect(result.updated).toBe(1);expect(result.failed).toEqual([]);expect(request).toHaveBeenCalledTimes(2)
+  expect(messages.some(message=>message.includes('服务繁忙'))).toBe(true)
+})
