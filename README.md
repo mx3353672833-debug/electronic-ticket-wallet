@@ -46,12 +46,12 @@ npm run dev -- --host 127.0.0.1 --port 5173 --strictPort
 地图只绘制有几何数据的线路。没有线路时仅标站点或保留在待定位列表，不用起终点直线冒充实际轨迹。
 
 1. 导入的 GPX / GeoJSON 优先，坐标按 WGS84 原样绘制。
-2. 可选铁路脚本基于起终站及普速／动车类别在 OSM 路网计算路径，**没有按具体车次和乘车日期查历史经由**。同站不同车次可能共享推算线；不是当次 GPS。界面明确标注未核实车次。地图使用 Canvas 和分级显示细节减少缩放计算，不修改保存的原坐标。
+2. 车次线路先按车次＋乘车日期查询 RailGo，再截取上下车站之间的有序停站，逐段匹配 OSM 铁路。旧日期无数据时使用可用的同车次时刻表；来源和查询日期保存在数据中。不同停站约束可生成不同路径。地图使用 Canvas 和分级显示细节减少缩放计算，不修改保存的原坐标。
 3. 开源包不附站名词典或路网缓存。新收藏可以手动补充信息、导入轨迹；自动站点定位和路网匹配需要自行准备数据。
-4. 新站点组合尚不自动在线查车次；航班也不画模拟航迹。足迹软件的专有备份格式尚未接入。
+4. 新上传的火车票扫描后自动查询车次线路；已有票可在旅程笔记中「更新车次线路」，或在「扫描与识别」中「按车次更新全部线路」。查询失败保留原线路；导入的 GPX 不会被覆盖。航班不画模拟航迹，足迹软件的专有备份格式尚未接入。
 5. OCR、纸张四角检测都有可能出错。识别结果必须人工核对；手动四角编辑器尚未实现，可切换查看保留的原图。
 
-公开的车次停站和历史时刻表数据确实存在；已核查的来源、许可限制与待接入方案见 [车次数据来源](docs/route-data-sources.md)。这不代表当前版本已经按车次还原线路。
+已接入的公开车次接口、使用条件与历史库授权申请见 [车次数据来源](docs/route-data-sources.md)。RailGo 当前仅支持非商业应用，部署者需遵守其使用条件。
 
 ### 可选的离线路网准备（macOS）
 
@@ -64,15 +64,17 @@ python3 scripts/build-rail-network.py /absolute/path/china-osm-railways.zip
 node scripts/process-folder.mjs /absolute/path/your-ticket-photos
 python3 scripts/build-rail-network.py /absolute/path/china-osm-railways.zip
 python3 scripts/rail-route.py
+python3 scripts/rail_graph.py .local-data/rail-network.pickle .local-data/rail-network.rgraph
 ```
 
-然后在票夹中「重新整理」以应用结果。所有扫描结果、OCR 全文、站点索引和路径缓存都在 `.local-data/`。脚本不修改源照片，不直接写浏览器数据库。路网使用当前数据，不能据此证明历史铁路经由；请保留来源日期和 OSM 署名。只加载自己生成的 `rail-network.pickle`，不要加载他人提供的 pickle 文件。
+然后在票夹中「扫描与识别」→「按车次更新全部线路」。所有扫描结果、OCR 全文、站点索引和路径缓存都在 `.local-data/`。脚本不修改源照片，不直接写浏览器数据库。私密服务器需把自己生成的 `rail-network.rgraph` 和 `stations.json` 放入 `WALLET_DATA` 数据目录，由服务账号读取。rgraph 使用内存映射，减少整张铁路图加载时的内存占用。转换器拒绝覆盖已有文件，更新时先生成新文件再切换；只转换自己生成的可信 pickle 文件，数据目录不得公开。
 
 ## 检查与开发
 
 ```bash
 npm test
 npm run test:server
+npm run test:routes
 npm run lint
 npm run build
 npm run build:server

@@ -46,7 +46,7 @@ export async function applyScan(id: string, result: ProcessingResult): Promise<v
   })
 }
 
-export type ScanProgress = { completed: number; total: number; current: string; failed: { name: string; error: string }[] }
+export type ScanProgress = { completed: number; total: number; current: string; failed: { name: string; error: string }[];updated?:number;unavailable?:number }
 export async function processExistingTickets(onProgress: (p: ScanProgress)=>void): Promise<ScanProgress> {
   const tickets = (await listTickets()).filter(t=>!t.id.startsWith('mock-'))
   const progress: ScanProgress = {completed:0,total:tickets.length,current:'',failed:[]}

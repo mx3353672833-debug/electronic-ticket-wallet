@@ -43,7 +43,7 @@ export type Ticket = {
   railRoute?: {
     segments: [number, number][][]
     source: 'osm-rail'
-    status: 'network-estimate'
+    status: 'network-estimate' | 'timetable-constrained'
     from: string
     to: string
     distanceKm: number
@@ -53,6 +53,17 @@ export type Ticket = {
     attribution: string
     sourceUrl: string
     computedAt: string
+    requestKey?: string
+    timetable?: {
+      provider: string
+      sourceUrl: string
+      trainNo: string
+      travelDate: string
+      serviceDate: string | null
+      basis: string
+      stops: string[]
+      queriedAt: string
+    }
   }
   processing?: {
     version: number

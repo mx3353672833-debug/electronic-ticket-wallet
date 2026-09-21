@@ -42,7 +42,7 @@ export default function App() {
       <div className="tray-toolbar"><YearTimeline /><button className="random-button" disabled={!hits.length} onClick={() => randomTicket()} aria-label="随机翻一张票"><Icon name="shuffle" size={17} /></button><span className="tray-count">{searchQuery ? hits.length + ' 张匹配' : routed + ' 张已关联线路'}</span><button type="button" className="tray-toggle" aria-label={trayCollapsed ? '展开票据栏' : '收起票据栏'} aria-expanded={!trayCollapsed} aria-controls="ticket-tray-content" onClick={() => { const next = !trayCollapsed; setTrayCollapsed(next); saveTrayCollapsed(next) }}><Icon name={trayCollapsed ? 'chevronUp' : 'chevronDown'} size={17} /><span>{trayCollapsed ? '展开' : '收起'}</span></button></div>
       <div className="tray-disclosure" id="ticket-tray-content" aria-hidden={trayCollapsed} inert={trayCollapsed}><div className="tray-disclosure-inner">
       <div className="ticket-filmstrip" aria-label="所有票据">{hits.map(t=><button key={t.id} className="film-ticket" onClick={()=>openTicket(t.id)} aria-label={formatRoute(t) + ' ' + (t.takenAt || t.sourceFile?.name || '日期待核对')}><img src={t.thumbnailUrl} alt="" loading="lazy" /><span>{t.takenAt || '日期待核对'}</span>{t.processing?.documentKind==='refund' && <small>退票凭证</small>}</button>)}{!hits.length && <p className="empty-collection">{tickets.length ? '没有匹配的票' : '添加票据照片，开始整理。'}</p>}</div>
-      <div className="collection-status"><span>{scanned} 张已扫描 · {REMOTE ? '私密云端票夹' : '仅保存在本机浏览器'}</span><span>蓝色：按起终站推算，未核实具体车次</span></div>
+      <div className="collection-status"><span>{scanned} 张已扫描 · {REMOTE ? '私密云端票夹' : '仅保存在本机浏览器'}</span></div>
       </div></div>
     </footer>
     {selectedTicketId && <TicketOverlay />}

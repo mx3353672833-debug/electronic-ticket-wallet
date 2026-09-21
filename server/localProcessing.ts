@@ -7,6 +7,8 @@ import { promisify } from 'node:util'
 import { recognizeTicket } from '../src/utils/recognition.ts'
 import type { ScanResult } from '../src/utils/recognition.ts'
 import type { Ticket, Place } from '../src/types/ticket.ts'
+// @ts-expect-error Node runtime module shared with the private server.
+import {createRoutePlanner} from './train-routes.mjs'
 
 const run = promisify(execFile)
 const root = path.resolve('.local-data')
@@ -14,6 +16,7 @@ const headers = { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosnif
 type Station = { lat: number; lng: number }
 let compiling: Promise<unknown> | undefined
 let processing: Promise<unknown> = Promise.resolve()
+const planRoute=createRoutePlanner({cacheDir:root})
 
 async function scanFile(data: Buffer) {
   const sha = crypto.createHash('sha256').update(data).digest('hex')
@@ -66,6 +69,12 @@ export function localProcessing(): Plugin {
       }
       Object.entries(headers).forEach(([k,v])=>res.setHeader(k,v))
       try {
+        if(url.pathname==='/__local/train-route' && req.method==='POST') {
+          const chunks:Buffer[]=[];let size=0
+          for await(const chunk of req){size+=chunk.length;if(size>16384)throw new Error('Route request too large');chunks.push(Buffer.from(chunk))}
+          const railRoute=await planRoute(JSON.parse(Buffer.concat(chunks).toString()))
+          res.setHeader('Content-Type','application/json');res.end(JSON.stringify(railRoute?{status:'updated',railRoute}:{status:'not-found'}));return
+        }
         if (url.pathname === '/__local/export/start' && req.method === 'POST') {
           const exportId = crypto.randomUUID()
           await fs.mkdir(path.join(root, 'exports', exportId, 'images'), { recursive: true, mode: 0o700 })

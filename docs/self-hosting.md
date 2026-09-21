@@ -62,6 +62,7 @@ sudo cp -R dist/. /opt/ticket-wallet/dist/
 sudo cp -R .local-data/deploy/server/. /opt/ticket-wallet/server/
 sudo cp -R .local-data/deploy/scripts/. /opt/ticket-wallet/scripts/
 sudo cp -R .local-data/deploy/node_modules/nodemailer /opt/ticket-wallet/node_modules/
+sudo cp -R .local-data/deploy/node_modules/gcoord /opt/ticket-wallet/node_modules/
 sudo install -m 0644 server/ticket-wallet.service /etc/systemd/system/
 ```
 
@@ -73,6 +74,8 @@ sudo systemctl enable --now ticket-wallet
 ```
 
 服务仅监听 `127.0.0.1:3031`。扫描需要 Tesseract 的中文、英文和方向识别语言包；可用 `tesseract --list-langs` 检查 `chi_sim`、`eng`、`osd`。
+
+按车次生成线路还需 README 中自己生成的 `rail-network.rgraph`、`stations.json`，放入私密数据目录，由服务账号读取。低内存主机优先使用 rgraph；旧 pickle 格式仍可读取，但整图加载占用较多内存。服务需要访问 RailGo 的 HTTPS 接口；不会发送照片、姓名、证件号或 OCR 全文。查询串行限速并缓存，禁止把该接口改为未登录的公共代理。保留网页中的 RailGo / OSM 署名；商业部署前另行取得适用数据许可，见 [数据来源](route-data-sources.md)。
 
 ## 4. HTTPS 反向代理
 

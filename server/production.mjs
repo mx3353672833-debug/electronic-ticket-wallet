@@ -11,6 +11,7 @@ import {authPage} from './auth-page.mjs'
 import {createMailer} from './mail.mjs'
 import {createFeedback} from './feedback.mjs'
 import {openCollection} from './collection.mjs'
+import {createRoutePlanner,routeInput,routeSignature} from './train-routes.mjs'
 import {failure,secureEqual} from './private-store.mjs'
 
 export {passwordHash}
@@ -26,19 +27,21 @@ async function jsonBody(req,limit=16384) {
   try { const value=JSON.parse((await body(req,limit)).toString());if(!value || Array.isArray(value) || typeof value!=='object')throw failure(400,'请求格式错误');return value }
   catch(error){if(error instanceof SyntaxError)throw failure(400,'请求格式错误');throw error}
 }
-export async function createWalletServer({dataDir,distDir,config,scanner,scannerFactory,serviceConfig,sendMail,now=()=>Date.now()}) {
+export async function createWalletServer({dataDir,distDir,config,scanner,scannerFactory,serviceConfig,sendMail,routePlanner,now=()=>Date.now()}) {
   const multi=Boolean(serviceConfig)
   const mail=sendMail || (multi?createMailer(serviceConfig):null)
   const accounts=multi?await createAccounts({dataDir,config:serviceConfig,sendMail:mail,now}):null
   const feedback=multi?await createFeedback({dataDir,config:serviceConfig,sendMail:mail,now}):null
   const sessions=new Map(),attempts=new Map(),collections=new Map(),busyUsers=new Set()
+  const planRoute=routePlanner || createRoutePlanner({cacheDir:dataDir})
+  const routeUsers=new Set()
   let loginJobs=0,scanJobs=0
   const legacyUser={id:'legacy',role:'owner',storage:'legacy',email:'',quotaBytes:0}
   const getCollection=user=>{
     if(!collections.has(user.id)) {
       if(!idPattern.test(user.id) || (user.storage==='legacy' && user.role!=='owner'))throw new Error('Invalid collection owner')
       const directory=user.storage==='legacy'?dataDir:path.join(dataDir,'users',user.id)
-      const loading=(async()=>openCollection({dataDir:directory,scanner:scannerFactory?await scannerFactory(directory,user):scanner || await createScanner(directory,{cacheDir:dataDir,includeRoutes:user.storage==='legacy'})}))()
+      const loading=(async()=>openCollection({dataDir:directory,routePlanner:planRoute,scanner:scannerFactory?await scannerFactory(directory,user):scanner || await createScanner(directory,{cacheDir:dataDir,includeRoutes:user.storage==='legacy'})}))()
       collections.set(user.id,loading)
       loading.catch(()=>collections.delete(user.id))
     }
@@ -144,6 +147,25 @@ export async function createWalletServer({dataDir,distDir,config,scanner,scanner
       const manifest=collection.manifest
       if(route===prefix+'/api/account' && req.method==='GET')return json(res,200,{...(accounts?accounts.publicUser(user):{role:'owner',email:''}),usedBytes:await collection.usageBytes(),quotaBytes:user.quotaBytes,registration:multi?'invite':'disabled',canInvite:multi && user.role==='owner',feedbackEnabled:multi})
       if(route===prefix+'/api/tickets' && req.method==='GET')return json(res,200,manifest.tickets)
+      const routeMatch=route.match(/^\/tickets\/api\/routes\/([a-zA-Z0-9-]{1,160})$/)
+      if(routeMatch && req.method==='POST') {
+        const ticket=manifest.tickets.find(t=>t.id===routeMatch[1])
+        if(!ticket)return json(res,404,{error:'票据不存在'})
+        if(!routeInput(ticket))return json(res,200,{status:'skipped'})
+        if(routeUsers.has(user.id))throw failure(429,'正在更新线路，请稍后重试')
+        routeUsers.add(user.id)
+        try {
+          const signature=routeSignature(ticket),railRoute=await planRoute(ticket)
+          if(!railRoute)return json(res,200,{status:'not-found'})
+          await serial(async()=>{
+            const current=collection.manifest,latest=current.tickets.find(t=>t.id===ticket.id)
+            if(!latest || latest.track || signature!==routeSignature(latest))throw failure(409,'票面信息已修改，请重新更新线路')
+            await collection.ensureRoom(Buffer.byteLength(JSON.stringify(railRoute)),user.quotaBytes)
+            await commit({...current,tickets:current.tickets.map(t=>t.id===ticket.id?{...t,railRoute,updatedAt:new Date().toISOString()}:t)})
+          })
+          return json(res,200,{status:'updated',railRoute})
+        } finally {routeUsers.delete(user.id)}
+      }
       const ticketMatch=route.match(/^\/tickets\/api\/tickets\/([a-zA-Z0-9-]{1,160})$/)
       if(ticketMatch) {
         const id=ticketMatch[1],existing=manifest.tickets.find(t=>t.id===id)
@@ -164,6 +186,8 @@ export async function createWalletServer({dataDir,distDir,config,scanner,scanner
         const next=await serial(async()=>{
           const current=collection.manifest
           const updated={...current.tickets.find(t=>t.id===id),...fields,updatedAt:new Date().toISOString()}
+          const previous=current.tickets.find(t=>t.id===id)
+          if(previous.takenAt!==updated.takenAt || previous.carrierOrTrainNo!==updated.carrierOrTrainNo || previous.departure?.name!==updated.departure?.name || previous.arrival?.name!==updated.arrival?.name || previous.type!==updated.type || updated.processing?.documentKind==='refund')delete updated.railRoute
           await collection.ensureRoom(Buffer.byteLength(JSON.stringify(fields)),user.quotaBytes)
           await commit({...current,tickets:current.tickets.map(t=>t.id===id?updated:t)})
           return updated

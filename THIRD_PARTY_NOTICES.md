@@ -24,6 +24,13 @@ directly; this release does not depend on or redistribute React Leaflet.
 The server uses [Nodemailer](https://github.com/nodemailer/nodemailer), MIT-0,
 for SMTP email. Its package is included in the server build with upstream notices.
 
+Train routing uses [gcoord](https://github.com/hujiulong/gcoord), MIT, to convert
+RailGo station coordinates from GCJ-02 to the existing WGS84 railway graph.
+The server build includes its license. Timetables and station coordinates come
+from [RailGo](https://api.railgo.dev/) under its service terms, not the project's
+MIT license. Use is non-commercial, attributed and rate-limited; this application
+does not expose an unauthenticated API relay or distribute its data cache.
+
 
 Linux scanning uses separately installed OpenCV (Apache-2.0 for current 4.x),
 Tesseract (Apache-2.0), Pillow (HPND) and NumPy (BSD-3-Clause). Their distributions

@@ -148,7 +148,7 @@ export function TicketMap({ fitRequest = 0, showPhotos = true }: { fitRequest?: 
   const [map, setMap] = useState<L.Map | null>(null)
   useEffect(() => {
     const instance = L.map(canvas.current!, {center:[34.5,112],zoom:4,zoomSnap:1,zoomDelta:1,zoomControl:false,scrollWheelZoom:true,wheelDebounceTime:80,wheelPxPerZoomLevel:100,preferCanvas:true,zoomAnimation:!matchMedia('(prefers-reduced-motion: reduce)').matches})
-    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {updateWhenZooming:false,keepBuffer:3,attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> · 蓝线：未核实车次的路网推算'})
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {updateWhenZooming:false,keepBuffer:3,attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> · 经停数据 <a href="https://railgo.dev/" target="_blank" rel="noreferrer">RailGo</a>'})
       .on('tileerror', () => setTileError(true)).addTo(instance)
     L.control.zoom({position:'bottomright',zoomInTitle:'放大地图',zoomOutTitle:'缩小地图'}).addTo(instance)
     setMap(instance)
@@ -164,7 +164,7 @@ export function TicketMap({ fitRequest = 0, showPhotos = true }: { fitRequest?: 
     {map && <><MapFrame map={map} routes={mapped} fitRequest={fitRequest} /><RouteLayers map={map} routes={mapped} query={searchQuery} hovered={hovered} onHover={setHovered} />{showPhotos && <PhotoMarkers map={map} routes={mapped} query={searchQuery} onHover={setHovered} />}</>}
     {tileError && <div className="map-notice" role="status">底图暂时无法加载，票据和轨迹仍可浏览。请检查网络后刷新。</div>}
     {noHits && <div className="map-feedback" role="status">没有匹配的票<button onClick={() => useTicketStore.getState().setSearchQuery('')}>清除搜索</button></div>}
-    {hoveredRoute && <div className="route-tooltip"><strong>{formatRoute(hoveredRoute.ticket)} · {hoveredRoute.ticket.carrierOrTrainNo || '车次待补'}</strong><span>{hoveredRoute.ticket.takenAt || '日期待核对'} · {hoveredRoute.ticket.track ? '已导入轨迹' : hoveredRoute.ticket.railRoute ? '按起终站推算 · 未核实本车次经由' : '仅标出站点 · 尚无线路'}</span></div>}
+    {hoveredRoute && <div className="route-tooltip"><strong>{formatRoute(hoveredRoute.ticket)} · {hoveredRoute.ticket.carrierOrTrainNo || '车次待补'}</strong><span>{hoveredRoute.ticket.takenAt || '日期待补'}{hoveredRoute.ticket.railRoute?.timetable && !hoveredRoute.ticket.track ? ` · ${hoveredRoute.ticket.railRoute.timetable.stops.length} 站` : ''}</span></div>}
     {missing.length > 0 && <div className="unplaced-tickets"><button className="glass-button" aria-expanded={showUnplaced} onClick={() => setShowUnplaced(!showUnplaced)}>{missing.length} 张票待定位</button>{showUnplaced && <div className="unplaced-list">{missing.filter(r => matchesSearch(r.ticket, searchQuery)).map(r => <button key={r.id} onClick={() => openTicket(r.id)}><img src={r.ticket.thumbnailUrl} alt="" loading="lazy" /><span>{formatRoute(r.ticket)}<small>补充地点或导入轨迹</small></span></button>)}</div>}</div>}
   </div>
 }

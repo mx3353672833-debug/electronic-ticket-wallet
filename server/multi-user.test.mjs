@@ -9,7 +9,7 @@ import {upgradeAccounts} from '../scripts/upgrade-accounts.mjs'
 import {createWalletServer} from './production.mjs'
 import {createFeedback} from './feedback.mjs'
 
-async function fixture(t,{quota=256*1048576,mailFailure=false,scanSize=20,restoredLegacy=false}={}) {
+async function fixture(t,{quota=256*1048576,mailFailure=false,scanSize=20,restoredLegacy=false,routePlanner}={}) {
   const root=await fs.mkdtemp(path.join(os.tmpdir(),'wallet-multi-test-')),dataDir=path.join(root,'data'),distDir=path.join(root,'dist')
   const origin='https://wallet.example'
   await initWallet({dataDir,origin,username:'original-owner'})
@@ -39,7 +39,7 @@ async function fixture(t,{quota=256*1048576,mailFailure=false,scanSize=20,restor
   const mails=[],scans=[]
   const mail=async message=>{if(failMail)throw new Error('Synthetic SMTP failure');mails.push(message)}
   const start=async()=>{
-    server=await createWalletServer({dataDir,distDir,config,serviceConfig,sendMail:mail,now:()=>time,scannerFactory:async directory=>async(source,hash)=>{
+    server=await createWalletServer({dataDir,distDir,config,serviceConfig,routePlanner,sendMail:mail,now:()=>time,scannerFactory:async directory=>async(source,hash)=>{
       scans.push(directory);const scanDir=path.join(directory,'scans',hash);await fs.mkdir(scanDir,{recursive:true})
       await fs.writeFile(path.join(scanDir,'processed.jpg'),Buffer.alloc(scanSize,1))
       await fs.writeFile(path.join(scanDir,'thumbnail.jpg'),Buffer.alloc(scanSize,2))
@@ -70,6 +70,26 @@ async function fixture(t,{quota=256*1048576,mailFailure=false,scanSize=20,restor
     advance:ms=>{time+=ms},setMailFailure:value=>{failMail=value},restart:async()=>{await new Promise(resolve=>server.close(resolve));await start()},
   }
 }
+
+test('route refresh is private, keeps photos and stories, and protects edits and GPX',async t=>{
+  let result={segments:[[[110,30],[111,31]]],distanceKm:100},release,started
+  const f=await fixture(t,{routePlanner:async()=>{started?.();if(release)await new Promise(resolve=>{release=resolve});return result}}),owner=await f.owner(),alice=await f.register('alice@example.com')
+  const url='/api/routes/'+f.id,patch=data=>f.request('/api/tickets/'+f.id,{cookie:owner,method:'PATCH',data})
+  await patch({takenAt:'2026-09-21',carrierOrTrainNo:'G1',departure:{name:'甲'},arrival:{name:'乙'}})
+  assert.equal((await f.request(url,{method:'POST'})).status,401)
+  assert.equal((await f.request(url,{cookie:alice,method:'POST'})).status,404)
+  assert.equal((await f.request(url,{cookie:owner,method:'POST',origin:'https://attacker.example'})).status,403)
+  assert.equal((await (await f.request(url,{cookie:owner,method:'POST'})).json()).status,'updated')
+  const read=async()=> (await f.request('/api/tickets/'+f.id,{cookie:owner})).json()
+  assert.equal((await read()).story,'private owner story');assert.equal((await read()).originalImageUrl,'idb://images/'+f.imageId)
+  result=null;assert.equal((await (await f.request(url,{cookie:owner,method:'POST'})).json()).status,'not-found');assert.equal((await read()).railRoute.distanceKm,100)
+  await patch({takenAt:'2026-09-20'});assert.equal((await read()).railRoute,undefined)
+  result={segments:[[[110,30],[111,31]]],distanceKm:200};release=true
+  const begin=new Promise(resolve=>{started=resolve}),pending=f.request(url,{cookie:owner,method:'POST'});await begin
+  await patch({carrierOrTrainNo:'G2'});release();assert.equal((await pending).status,409);assert.equal((await read()).railRoute,undefined)
+  await patch({track:{segments:[[[110,30],[111,31]]]}})
+  assert.equal((await (await f.request(url,{cookie:owner,method:'POST'})).json()).status,'skipped')
+})
 
 test('migration preserves legacy data; registration isolates tickets, media, processing and admin feedback',async t=>{
   const f=await fixture(t),alice=await f.register('alice@example.com'),owner=await f.owner()

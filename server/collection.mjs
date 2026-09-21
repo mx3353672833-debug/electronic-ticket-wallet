@@ -2,7 +2,7 @@ import fs from 'node:fs/promises'
 import path from 'node:path'
 import {atomicJson,failure,serialQueue} from './private-store.mjs'
 
-export async function openCollection({dataDir,scanner}) {
+export async function openCollection({dataDir,scanner,routePlanner}) {
   let manifest=JSON.parse(await fs.readFile(path.join(dataDir,'manifest.json'),'utf8'))
   const serial=serialQueue()
   const commit=async next=>{
@@ -40,6 +40,10 @@ export async function openCollection({dataDir,scanner}) {
       processing:{version:result.version,processedAt:now,cropped:result.cropped,reviewed:false,issues:fields.issues,documentKind:fields.documentKind,departureTime:fields.departureTime,amount:fields.amount},
       tags:ticket.tags.filter(t=>t!=='待整理'),updatedAt:now}
     if(!next.track && result.railRoute?.from===next.departure?.name && result.railRoute?.to===next.arrival?.name) next.railRoute=result.railRoute
+    if(routePlanner && !next.track) {
+      // Timetable/network outages must not make an otherwise valid photo import fail.
+      try{const route=await routePlanner(next);if(route)next.railRoute=route}catch{}
+    }
     return {ticket:next,images:additions,originalMime:({JPEG:'image/jpeg',PNG:'image/png',WEBP:'image/webp',GIF:'image/gif',AVIF:'image/avif'})[result.originalFormat]||'application/octet-stream'}
   }
   return {get manifest(){return manifest},dataDir,serial,commit,processTicket,usageBytes,
