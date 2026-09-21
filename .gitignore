@@ -1,0 +1,54 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+.local-data/
+*.local
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.sqlite*
+*.db
+__pycache__/
+*.pyc
+.venv/
+coverage/
+
+# Private operating notes and one-off migration tools stay on this machine.
+/AGENTS.md
+/docs/2026-*.md
+/docs/电子票夹实施计划.md
+/电子票夹实施计划.md
+/本地项目云端归档与协作方案.md
+/scripts/provision-login.mjs
+/scripts/initialize-server.mjs
+/scripts/verify-server.mjs
+/scripts/verify-linux-import.mjs
+/scripts/preview-server.mjs
+
+# Unused starter media is not part of the project or the source release.
+/src/assets/
+/public/icons.svg
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?

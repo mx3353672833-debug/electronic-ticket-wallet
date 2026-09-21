@@ -1,0 +1,63 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import App from '../App'
+import { mockTickets } from '../data/mockTickets'
+import { useTicketStore } from '../store/useTicketStore'
+import { readTrayCollapsed, saveTrayCollapsed, TRAY_PREFERENCE_KEY } from '../utils/trayPreference'
+
+vi.mock('../components/TicketMap', () => ({ TicketMap: () => <div>Test map</div> }))
+
+beforeEach(() => {
+  localStorage.clear()
+  useTicketStore.setState({ready:true,loadError:null,init:async()=>{},tickets:mockTickets.slice(0,3),searchQuery:'',yearRange:null,selectedTicketId:null,uploadOpen:false})
+})
+afterEach(() => { cleanup(); vi.restoreAllMocks() })
+
+describe('collapsible ticket tray', () => {
+  it('starts compact, expands accessibly and hides the filmstrip from keyboard navigation when collapsed', () => {
+    render(<App />)
+    const toggle=screen.getByRole('button',{name:'展开票据栏'})
+    const content=document.getElementById(toggle.getAttribute('aria-controls')!)!
+    expect(toggle).toHaveAttribute('aria-expanded','false')
+    expect(content).toHaveAttribute('inert')
+    expect(content).toHaveAttribute('aria-hidden','true')
+    expect(screen.getByRole('group',{name:'年份筛选'})).toBeInTheDocument()
+    expect(screen.getByRole('button',{name:'随机翻一张票'})).toBeEnabled()
+    fireEvent.click(toggle)
+    expect(screen.getByRole('button',{name:'收起票据栏'})).toHaveAttribute('aria-expanded','true')
+    expect(content).not.toHaveAttribute('inert')
+    expect(content).toHaveAttribute('aria-hidden','false')
+    const filmstrip=document.querySelector('.ticket-filmstrip')!
+    fireEvent.click(screen.getByRole('button',{name:'收起票据栏'}))
+    expect(content).toHaveAttribute('inert')
+    // Keep the same element, its horizontal position and selected filters.
+    expect(document.querySelector('.ticket-filmstrip')).toBe(filmstrip)
+    expect(useTicketStore.getState().tickets).toHaveLength(3)
+  })
+
+  it('remembers both states across remounts without resetting search or year filters', () => {
+    const view=render(<App />)
+    fireEvent.click(screen.getByRole('button',{name:'展开票据栏'}))
+    expect(localStorage.getItem(TRAY_PREFERENCE_KEY)).toBe('false')
+    view.unmount()
+    const expanded=render(<App />)
+    expect(screen.getByRole('button',{name:'收起票据栏'})).toBeInTheDocument()
+    fireEvent.change(screen.getByRole('searchbox'),{target:{value:'G503'}})
+    fireEvent.click(screen.getByRole('button',{name:'收起票据栏'}))
+    expect(useTicketStore.getState().searchQuery).toBe('G503')
+    expect(localStorage.getItem(TRAY_PREFERENCE_KEY)).toBe('true')
+    expanded.unmount()
+    render(<App />)
+    expect(screen.getByRole('button',{name:'展开票据栏'})).toBeInTheDocument()
+  })
+
+  it('remains usable when browser preference storage is blocked', () => {
+    vi.spyOn(Storage.prototype,'getItem').mockImplementation(()=>{throw new Error('blocked')})
+    vi.spyOn(Storage.prototype,'setItem').mockImplementation(()=>{throw new Error('blocked')})
+    expect(readTrayCollapsed()).toBe(true)
+    expect(()=>saveTrayCollapsed(false)).not.toThrow()
+    render(<App />)
+    fireEvent.click(screen.getByRole('button',{name:'展开票据栏'}))
+    expect(screen.getByRole('button',{name:'收起票据栏'})).toBeInTheDocument()
+  })
+})

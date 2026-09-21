@@ -1,0 +1,32 @@
+[Unit]
+Description=Private electronic ticket wallet
+After=network.target
+
+[Service]
+Type=simple
+User=ticket-wallet
+Group=ticket-wallet
+WorkingDirectory=/opt/ticket-wallet
+Environment=NODE_ENV=production
+Environment=WALLET_DATA=/var/lib/ticket-wallet
+Environment=WALLET_PORT=3031
+Environment=WALLET_PYTHON=/opt/ticket-wallet-venv/bin/python
+Environment=OMP_THREAD_LIMIT=1
+Environment=OPENBLAS_NUM_THREADS=1
+ExecStart=/usr/bin/node /opt/ticket-wallet/server/production.mjs
+Restart=on-failure
+RestartSec=5
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/ticket-wallet
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+MemoryMax=768M
+CPUQuota=100%
+TasksMax=64
+
+[Install]
+WantedBy=multi-user.target
