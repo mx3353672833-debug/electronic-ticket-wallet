@@ -50,6 +50,8 @@ sudo chown -R ticket-wallet:ticket-wallet /var/lib/ticket-wallet
 
 新安装的 `stations.json` 和 `routes.json` 是空对象，收藏为空。可以上传和手动录入票面信息；自动站名匹配与路网定位需要按 README 准备自己的数据。也可以直接给每张票导入 GPX / GeoJSON。
 
+旧邀请地址兼容：注册入口会把 URL query 中格式正确的 `invite` 移到 fragment，但不会因此授予注册权限。除新生成的令牌外，校验器也识别 16 位旧令牌；它必须由运维明确登记为带有效期的单次邀请摘要才有效，单独保留 `service.json` 的 `inviteCode` 无效。不要批量恢复旧共用码，也不要重置已使用或已撤销的记录。
+
 ## 3. 部署程序
 
 下面路径对应仓库中的 systemd 模板。这是新安装步骤，已有部署应先备份并使用独立发布目录。

@@ -94,6 +94,10 @@ export async function createWalletServer({dataDir,distDir,config,scanner,scanner
         return res.end(await fs.readFile(fileURLToPath(new URL('.'+route.slice(prefix.length),import.meta.url))))
       }
       if(req.method==='GET' && ['/tickets/login','/tickets/register','/tickets/reset'].includes(route)) {
+        // Preserve explicitly restored old links. Move the token to a fragment
+        // before rendering; subsequent page requests do not carry it in the URL.
+        const legacyInvite=new URL(req.url,config.origin).searchParams.get('invite')
+        if(route==='/tickets/register' && legacyInvite && /^(?:[A-Za-z0-9_-]{43}|[A-Za-z0-9_-]{16})$/.test(legacyInvite))return redirect(res,prefix+'/register#invite='+encodeURIComponent(legacyInvite))
         if(user && route!=='/tickets/reset')return redirect(res,prefix+'/')
         const mode=route.split('/').pop()
         if(mode!=='login' && !multi)return json(res,404,{error:'当前服务未启用注册'})

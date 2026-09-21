@@ -9,7 +9,7 @@ import {upgradeAccounts} from '../scripts/upgrade-accounts.mjs'
 import {createWalletServer} from './production.mjs'
 import {createFeedback} from './feedback.mjs'
 
-async function fixture(t,{quota=256*1048576,mailFailure=false,scanSize=20}={}) {
+async function fixture(t,{quota=256*1048576,mailFailure=false,scanSize=20,restoredLegacy=false}={}) {
   const root=await fs.mkdtemp(path.join(os.tmpdir(),'wallet-multi-test-')),dataDir=path.join(root,'data'),distDir=path.join(root,'dist')
   const origin='https://wallet.example'
   await initWallet({dataDir,origin,username:'original-owner'})
@@ -29,7 +29,12 @@ async function fixture(t,{quota=256*1048576,mailFailure=false,scanSize=20}={}) {
   await fs.mkdir(distDir);await fs.writeFile(path.join(distDir,'index.html'),'<title>Test wallet</title>')
   const serviceConfig=JSON.parse(await fs.readFile(path.join(dataDir,'service.json'),'utf8'))
   serviceConfig.memberQuotaBytes=quota
-  serviceConfig.inviteCode='legacy-shared-code-must-not-work'
+  serviceConfig.inviteCode='legacy-link-0001'
+  if(restoredLegacy) {
+    const file=path.join(dataDir,'accounts.json'),state=JSON.parse(await fs.readFile(file,'utf8'))
+    state.invitations=[{id:crypto.randomUUID(),hash:crypto.createHmac('sha256',state.codeSecret).update('invitation:'+serviceConfig.inviteCode).digest('hex'),createdAt:Date.now(),expiresAt:Date.now()+7*86400000}]
+    await fs.writeFile(file,JSON.stringify(state),{mode:0o600})
+  }
   let time=Date.now(),server,base,failMail=mailFailure
   const mails=[],scans=[]
   const mail=async message=>{if(failMail)throw new Error('Synthetic SMTP failure');mails.push(message)}
@@ -216,4 +221,22 @@ test('invites reject legacy/missing tokens, expire, revoke and bind the email co
   assert.equal((await f.request('/auth/invitation',{method:'POST',data:{inviteCode:original}})).status,403)
   const page=await (await f.request('/register')).text()
   assert.match(page,/form[^>]*hidden/);assert.doesNotMatch(page,/朋友发给你的邀请码/)
+})
+
+test('explicitly restored legacy URL stays one-use for competing emails and after restart',async t=>{
+  const f=await fixture(t,{restoredLegacy:true}),token=f.serviceConfig.inviteCode
+  const page=await f.request('/register?invite='+token)
+  assert.equal(page.status,303)
+  assert.equal(page.headers.get('location'),'/tickets/register#invite='+token)
+  for(const email of ['alice@example.com','bob@example.com'])f.invitations.set(email,token)
+  const codes=await Promise.all(['alice@example.com','bob@example.com'].map(email=>f.code(email)))
+  const results=await Promise.all(['alice@example.com','bob@example.com'].map((email,i)=>f.request('/auth/register',{method:'POST',data:{email,code:codes[i],password:f.password,inviteCode:token}})))
+  assert.deepEqual(results.map(r=>r.status).sort(),[201,403])
+  await f.restart()
+  assert.equal((await f.request('/auth/invitation',{method:'POST',data:{inviteCode:token}})).status,403)
+  assert.equal((await f.request('/register?invite=https%3A%2F%2Fattacker.example')).headers.get('location'),null)
+  const owner=await f.owner(),list=await(await f.request('/api/invitations',{cookie:owner})).json()
+  assert.equal(list[0].status,'used')
+  const modern=await f.newInvite()
+  assert.equal((await f.request('/auth/invitation',{method:'POST',data:{inviteCode:modern.token}})).status,200)
 })

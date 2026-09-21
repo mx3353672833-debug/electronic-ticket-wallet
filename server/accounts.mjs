@@ -23,8 +23,9 @@ export async function createAccounts({dataDir,config,sendMail,now=()=>Date.now()
   const digest=text=>crypto.createHmac('sha256',state.codeSecret).update(text).digest('hex')
   const publicUser=user=>({id:user.id,email:user.email,role:user.role,quotaBytes:user.quotaBytes})
   const getUser=id=>store.read().users.find(u=>u.id===id)
-  // Legacy shared inviteCode is deliberately ignored. Tokens are returned only on creation.
-  const inviteHash=value=>typeof value==='string' && /^[A-Za-z0-9_-]{43}$/.test(value)?digest(`invitation:${value}`):null
+  // Configured shared codes are never auto-enabled. A 16-character legacy token
+  // only works if an operator explicitly enrolled its hash as a one-use record.
+  const inviteHash=value=>typeof value==='string' && /^(?:[A-Za-z0-9_-]{43}|[A-Za-z0-9_-]{16})$/.test(value)?digest(`invitation:${value}`):null
   const activeInvite=(next,value)=>{const hash=inviteHash(value);return hash && (next.invitations||[]).find(i=>i.hash===hash && !i.usedAt && !i.revokedAt && i.expiresAt>now())}
   const requireInvite=(next,value)=>{const invite=activeInvite(next,value);if(!invite)throw failure(403,'邀请链接无效、已使用或已过期，请向站长索取新链接');return invite}
   const inviteValid=value=>Boolean(activeInvite(store.read(),value))
