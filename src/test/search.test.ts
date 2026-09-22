@@ -61,6 +61,13 @@ describe('cloud vs action result set', () => {
 })
 
 describe('search matching', () => {
+  it('combines year, station and train terms in any order, including full-width input',()=>{
+    const ticket={...mockTickets[0],takenAt:'2025-08-19',departure:{name:'北京南'},carrierOrTrainNo:'G8902'}
+    expect(matchesSearch(ticket,'2025 北京')).toBe(true)
+    expect(matchesSearch(ticket,'北京 Ｇ８９０２')).toBe(true)
+    expect(matchesSearch(ticket,'2024 北京')).toBe(false)
+    expect(matchesSearch(ticket,'  ')).toBe(true)
+  })
   it('matches by city, train no, date, story, tag', () => {
     expect(mockTickets.filter((t) => matchesSearch(t, '大连')).length).toBeGreaterThan(0)
     expect(

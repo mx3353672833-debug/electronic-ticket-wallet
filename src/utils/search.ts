@@ -1,5 +1,6 @@
 import type { Ticket } from '../types/ticket'
 import { TICKET_TYPE_LABELS } from '../types/ticket'
+import {missingJourneyFields} from './ticketCompleteness'
 
 export type YearRange = { start: number; end: number } | null
 
@@ -23,9 +24,9 @@ export function ticketSearchText(ticket: Ticket): string {
 }
 
 export function matchesSearch(ticket: Ticket, query: string): boolean {
-  const q = query.trim().toLowerCase()
-  if (!q) return true
-  return ticketSearchText(ticket).toLowerCase().includes(q)
+  const terms=query.normalize('NFKC').trim().toLowerCase().split(/\s+/).filter(Boolean)
+  const text=ticketSearchText(ticket).normalize('NFKC').toLowerCase()
+  return terms.every(term=>text.includes(term))
 }
 
 export function matchesYear(ticket: Ticket, range: YearRange): boolean {
@@ -36,7 +37,7 @@ export function matchesYear(ticket: Ticket, range: YearRange): boolean {
   return year >= range.start && year <= range.end
 }
 
-/** 票云展示集：仅年份范围，搜索不把票移出票云 */
+/** 地图展示集：仅年份范围，搜索不把非命中票移出地图。 */
 export function yearScopedTickets(
   tickets: Ticket[],
   yearRange: YearRange,
@@ -55,7 +56,7 @@ export function filterTickets(
   )
 }
 
-/** 在已按年份圈定的票云里标出搜索命中 */
+/** 在已按年份圈定的地图里标出搜索命中。 */
 export function searchHits(ticketsInCloud: Ticket[], query: string): Ticket[] {
   return ticketsInCloud.filter((t) => matchesSearch(t, query))
 }
@@ -70,7 +71,7 @@ export function mergeStoryUpdate(
 }
 
 export function ticketHasIncompleteJourney(ticket: Ticket): boolean {
-  return !ticket.takenAt || !ticket.departure || !ticket.arrival
+  return missingJourneyFields(ticket).length>0
 }
 
 export function formatRoute(ticket: Ticket): string {

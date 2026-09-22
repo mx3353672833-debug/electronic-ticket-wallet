@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, createEvent, fireEvent, render, screen } from '@testing-library/react'
 import App from '../App'
 import { mockTickets } from '../data/mockTickets'
 import { useTicketStore } from '../store/useTicketStore'
@@ -15,6 +15,22 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.restoreAllMocks() })
 
 describe('collapsible ticket tray', () => {
+  it('reports the count in the selected year rather than the whole collection',()=>{
+    useTicketStore.setState({tickets:[{...mockTickets[0],takenAt:'2025-01-01'},{...mockTickets[1],takenAt:'2026-01-01'}]})
+    render(<App/>);fireEvent.click(screen.getByRole('button',{name:'2025'}))
+    expect(screen.getByText('1 张票 · 0 张有线路')).toBeInTheDocument()
+  })
+  it('does not open a ticket from an empty search and consumes Enter when opening a result',()=>{
+    const openTicket=vi.spyOn(useTicketStore.getState(),'openTicket').mockImplementation(()=>{})
+    render(<App/>);const input=screen.getByRole('searchbox')
+    fireEvent.focus(input);fireEvent.keyDown(input,{key:'Enter'})
+    expect(openTicket).not.toHaveBeenCalled()
+    fireEvent.change(input,{target:{value:mockTickets[0].carrierOrTrainNo}})
+    const enter=createEvent.keyDown(input,{key:'Enter',cancelable:true})
+    fireEvent(input,enter)
+    expect(enter.defaultPrevented).toBe(true)
+    expect(openTicket).toHaveBeenCalledTimes(1)
+  })
   it('opens release history without resetting the map, search, years or tray',async()=>{
     HTMLDialogElement.prototype.showModal=function(){this.setAttribute('open','')}
     HTMLDialogElement.prototype.close=function(){this.removeAttribute('open')}

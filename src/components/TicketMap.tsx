@@ -12,6 +12,7 @@ import { ticketRoute } from '../utils/geo'
 import type { TicketRoute } from '../utils/geo'
 import { createRouteGeometry, geometryLevel } from '../utils/mapGeometry'
 import {warmTicketImage} from '../utils/displayImages'
+import {missingJourneyFields} from '../utils/ticketCompleteness'
 
 const baseLand=feature(land as unknown as Topology<{land:GeometryCollection}>,'land')
 const reducedMotion=()=>matchMedia('(prefers-reduced-motion: reduce)').matches
@@ -51,7 +52,7 @@ function PhotoMarkers({ map, routes, query, onHover }: { map: L.Map; routes: Tic
       const image=L.DomUtil.create('img','real-ticket',face) as HTMLImageElement
       image.src=ticket.thumbnailUrl;image.alt=formatRoute(ticket)+' 票面';image.draggable=false;image.decoding='async'
       const caption=L.DomUtil.create('span','map-photo-caption',shell)
-      caption.textContent=`${ticket.departure?.name || '待核对'} → ${ticket.arrival?.name || '待核对'}`
+      caption.textContent=`${ticket.departure?.name || ticket.departure?.city || '出发地待补充'} → ${ticket.arrival?.name || ticket.arrival?.city || '到达地待补充'}`
       L.DomUtil.create('span',`map-photo-dot ${ticket.track || ticket.railRoute ? 'has-track' : ''}`,shell)
       const marker = L.marker([route.mid.lat, route.mid.lng], { icon: L.divIcon({ html: shell, className: 'photo-marker', iconSize: [130, 86], iconAnchor: [65, 90] }), keyboard: true, title: `${formatRoute(ticket)} ${ticket.takenAt || '日期待补'}`, alt: formatRoute(ticket), riseOnHover: true, match } as L.MarkerOptions)
       marker.on('click', () => useTicketStore.getState().openTicket(ticket.id,marker.getElement()?.querySelector('img')))
@@ -193,6 +194,6 @@ export function TicketMap({ fitRequest = 0, showPhotos = true }: { fitRequest?: 
     {tileError && <div className="map-notice" role="status">底图暂时无法加载，票据和轨迹仍可浏览。请检查网络后刷新。</div>}
     {noHits && <div className="map-feedback" role="status">没有匹配的票<button onClick={() => useTicketStore.getState().setSearchQuery('')}>清除搜索</button></div>}
     {hoveredRoute && <div className="route-tooltip"><strong>{formatRoute(hoveredRoute.ticket)} · {hoveredRoute.ticket.carrierOrTrainNo || '车次待补'}</strong><span>{hoveredRoute.ticket.takenAt || '日期待补'}{hoveredRoute.ticket.railRoute?.timetable && !hoveredRoute.ticket.track ? ` · ${hoveredRoute.ticket.railRoute.timetable.stops.length} 站` : ''}</span></div>}
-    {missing.length > 0 && <div className="unplaced-tickets"><button className="glass-button" aria-expanded={showUnplaced} onClick={() => setShowUnplaced(!showUnplaced)}>{missing.length} 张票待定位</button>{showUnplaced && <div className="unplaced-list">{missing.filter(r => matchesSearch(r.ticket, searchQuery)).map(r => <button key={r.id} onClick={() => openTicket(r.id)}><img src={r.ticket.thumbnailUrl} alt="" loading="lazy" /><span>{formatRoute(r.ticket)}<small>补充地点或导入轨迹</small></span></button>)}</div>}</div>}
+    {missing.length > 0 && <div className="unplaced-tickets"><button className="glass-button" aria-expanded={showUnplaced} onClick={() => setShowUnplaced(!showUnplaced)}>地图外收藏 · {missing.length}</button>{showUnplaced && <div className="unplaced-list">{missing.filter(r => matchesSearch(r.ticket, searchQuery)).map(r => <button key={r.id} onClick={() => openTicket(r.id)}><img src={r.ticket.thumbnailUrl} alt="" loading="lazy" /><span>{formatRoute(r.ticket)}<small>{r.ticket.processing?.documentKind==='refund'?'退票凭证':missingJourneyFields(r.ticket).length?'信息待补充':'尚未显示在地图'}</small></span></button>)}</div>}</div>}
   </div>
 }
